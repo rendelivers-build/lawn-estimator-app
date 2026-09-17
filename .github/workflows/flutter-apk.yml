@@ -1,11 +1,13 @@
 name: Build Flutter APK
 
+
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
 
 jobs:
   build:
@@ -14,13 +16,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
 
+
       - name: Install dependencies
         run: flutter pub get
 
+
       - name: Build release APK
         run: flutter build apk --release
+
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lawn-estimator-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
