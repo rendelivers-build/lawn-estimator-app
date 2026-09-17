@@ -4,6 +4,16 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// flutter_google_places_sdk_android 0.2.2 ships Kotlin written for the Places
+// v3 API but pins the v5 native library, which fails compilation (upstream
+// issue #137). Force the v3 library that 0.2.1 shipped with until the plugin
+// itself is fixed.
+configurations.all {
+    resolutionStrategy {
+        force "com.google.android.libraries.places:places:3.5.0"
+    }
+}
+
 android {
     namespace = "com.rendelivers.lawnestimator"
     compileSdk = 36
