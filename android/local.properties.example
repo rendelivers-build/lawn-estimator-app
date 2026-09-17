@@ -1,0 +1,11 @@
+# Copy this file to local.properties and fill in your real key.
+# local.properties is gitignored — never commit a real API key.
+#
+# The key below feeds android/app/build.gradle, which injects it into the
+# AndroidManifest as ${MAPS_API_KEY} (Google Maps Android SDK).
+#
+# Restrict the key in the Google Cloud console to:
+#   - Application restriction: Android apps, package com.rendelivers.lawnestimator
+#     with your debug and release SHA-1 fingerprints
+#   - API restrictions: Maps SDK for Android, Places API
+MAPS_API_KEY=YOUR_KEY_HERE
