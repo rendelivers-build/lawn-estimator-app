@@ -1,10 +1,9 @@
 /// Pricing settings screen: the owner sets their own prices and the
 /// area-default reference rates used when they haven't.
 ///
-/// Also hosts the Beginner / Expert experience mode. In Beginner mode the
-/// built-in starter prices fill in wherever the owner hasn't set a price,
-/// so estimates never come out $0. Expert mode disables the starter
-/// fallback and expects the owner to enter every price.
+/// Also hosts the Beginner / Expert experience mode. Wherever the owner
+/// hasn't set a price, the built-in reference price fills in, so estimates
+/// never come out $0. The owner's own price always wins.
 library;
 
 import 'package:flutter/material.dart';
@@ -47,8 +46,9 @@ class PricingSettingsScreen extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     expert
-                        ? 'Expert mode: no starter prices — enter your own '
-                            'price for every service below.'
+                        ? 'Expert mode: reference rates fill in wherever you '
+                            'haven\'t set a price — enter your own price for '
+                            'any service below.'
                         : 'Beginner mode: starter prices fill in wherever you '
                             'haven\'t set one, so estimates never come out '
                             '\$0. Enter your company info, then adjust any '
@@ -75,8 +75,8 @@ class PricingSettingsScreen extends ConsumerWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'Expert mode on — set your own price for '
-                                'each service below.',
+                                'Expert mode on — your prices always win; '
+                                'reference rates fill the gaps.',
                               ),
                             ),
                           );
@@ -106,8 +106,9 @@ class PricingSettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 "Your prices always win. When you haven't set a price, the "
-                "area default fills in — it's a reference rate, not a market quote."
-                "${expert ? '' : ' In Beginner mode the starter price fills in last.'}",
+                "area default fills in — it's a reference rate, not a market quote. "
+                "The built-in reference price fills in last wherever nothing "
+                "else is set.",
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -204,6 +205,9 @@ class _ServicePriceRow extends ConsumerWidget {
                 ),
               ],
             ),
+            // Granular materials are bought by the bag: offer the
+            // bag-price math instead of making the owner divide it out.
+            if (service.unit == 'lb') _BagPriceHelper(service: service),
           ],
         ),
       ),
@@ -212,6 +216,118 @@ class _ServicePriceRow extends ConsumerWidget {
 
   static String _trim(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+}
+
+/// Bag-price helper for per-lb materials (seed, fertilizer, weed & feed).
+///
+/// The owner buys by the bag, not by the pound: they type the bag price
+/// (e.g. $26) and the bag weight (e.g. 40 lb), the app does the division,
+/// and one tap writes the per-lb result into "Your price".
+class _BagPriceHelper extends ConsumerStatefulWidget {
+  final PricingService service;
+
+  const _BagPriceHelper({required this.service});
+
+  @override
+  ConsumerState<_BagPriceHelper> createState() => _BagPriceHelperState();
+}
+
+class _BagPriceHelperState extends ConsumerState<_BagPriceHelper> {
+  final _bagPriceCtrl = TextEditingController();
+  final _bagWeightCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _bagPriceCtrl.dispose();
+    _bagWeightCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Per-lb price once both fields hold a valid number, else null.
+  double? get _perLb {
+    final price = double.tryParse(_bagPriceCtrl.text.trim());
+    final weight = double.tryParse(_bagWeightCtrl.text.trim());
+    if (price == null || weight == null || weight <= 0) return null;
+    return price / weight;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final perLb = _perLb;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          'Buy it by the bag? Enter the bag price and weight — '
+          'the per-lb math is done for you.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _bagPriceCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Bag price',
+                  prefixText: '\$',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _bagWeightCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Bag weight (lb)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ],
+        ),
+        if (perLb != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '= \$${perLb.toStringAsFixed(2)} per lb',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              FilledButton.tonal(
+                onPressed: () {
+                  final rounded =
+                      double.parse(perLb.toStringAsFixed(2));
+                  ref
+                      .read(pricingProvider.notifier)
+                      .setOwnerPrice(widget.service.id, rounded);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Your price set to '
+                        '\$${rounded.toStringAsFixed(2)} per lb.',
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Use this price'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 /// Numeric price field that reports a parsed value on submit.
