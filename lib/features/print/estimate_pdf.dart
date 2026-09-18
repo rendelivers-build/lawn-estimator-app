@@ -268,11 +268,16 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
     // unitPrice is stored as a String; parse defensively for display.
     final unitPriceValue = double.tryParse(item.unitPrice) ?? 0;
     final unitPrice = _formatMoney(unitPriceValue);
+    // The note carries the labor workers × hours breakdown (and any user
+    // notation); zero-dollar lines print in full, never hidden.
+    final serviceText = (item.note == null || item.note!.isEmpty)
+        ? serviceLabel(item.service)
+        : '${serviceLabel(item.service)}\n${item.note!}';
     rows.add(
       pw.TableRow(
         decoration: bg == null ? null : pw.BoxDecoration(color: bg),
         children: [
-          bodyCell(serviceLabel(item.service)),
+          bodyCell(serviceText),
           bodyCell(_formatQty(item.quantity), right: true),
           bodyCell(item.unit),
           bodyCell(unitPrice, right: true),
@@ -324,29 +329,37 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
 // Materials reference box
 // ---------------------------------------------------------------------------
 
-/// Local label/unit mapping for material types. Unknown types fall back to a
-/// title-cased version of the raw type with no unit.
-const Map<String, ({String label, String unit})> _materialLabels = {
-  'seed_new': (label: 'Seed – new lawn', unit: 'lb'),
-  'seed_overseed': (label: 'Seed – overseed', unit: 'lb'),
-  'fertilizer': (label: 'Fertilizer', unit: 'lb'),
-  'lime': (label: 'Lime', unit: 'lb'),
-  'mulch': (label: 'Mulch', unit: 'cu yd'),
-  'sod': (label: 'Sod', unit: 'sq ft'),
-  'topsoil': (label: 'Topsoil', unit: 'cu yd'),
-  'herbicide': (label: 'Herbicide', unit: 'gal'),
-  'weed_control': (label: 'Weed control', unit: 'lb'),
-  'weed_feed': (label: 'Weed & feed', unit: 'bags'),
+/// Local label/unit mapping for material types. [unit] is the unit of the
+/// exact calculated quantity; [purchaseUnit], when set, is the unit of the
+/// buy quantity (e.g. weed & feed is calculated in lb but bought in bags).
+/// Unknown types fall back to a title-cased version of the raw type with
+/// no unit.
+const Map<String, ({String label, String unit, String? purchaseUnit})>
+    _materialLabels = {
+  'seed_new': (label: 'Seed – new lawn', unit: 'lb', purchaseUnit: null),
+  'seed_overseed': (label: 'Seed – overseed', unit: 'lb', purchaseUnit: null),
+  'fertilizer': (label: 'Fertilizer', unit: 'lb', purchaseUnit: null),
+  'lime': (label: 'Lime', unit: 'lb', purchaseUnit: null),
+  'mulch': (label: 'Mulch', unit: 'cu yd', purchaseUnit: null),
+  'sod': (label: 'Sod', unit: 'sq ft', purchaseUnit: null),
+  'topsoil': (label: 'Topsoil', unit: 'cu yd', purchaseUnit: null),
+  'herbicide': (label: 'Herbicide', unit: 'gal', purchaseUnit: null),
+  'weed_control': (label: 'Weed control', unit: 'lb', purchaseUnit: null),
+  'weed_feed': (label: 'Weed & feed', unit: 'lb', purchaseUnit: 'bags'),
 };
 
 String _materialLine(MaterialEstimate material) {
   final known = _materialLabels[material.materialType];
   final label = known?.label ?? _fallbackLabel(material.materialType);
   final unit = known?.unit ?? '';
+  final purchaseUnit = known?.purchaseUnit;
   final qty = unit.isEmpty
       ? _formatQty(material.exactQuantity)
       : '${_formatQty(material.exactQuantity)} $unit';
-  return '$label: $qty exact, buy ${_formatQty(material.purchaseUnits)}';
+  final buy = purchaseUnit == null || purchaseUnit.isEmpty
+      ? _formatQty(material.purchaseUnits)
+      : '${_formatQty(material.purchaseUnits)} $purchaseUnit';
+  return '$label: $qty exact, buy $buy';
 }
 
 String _fallbackLabel(String raw) {

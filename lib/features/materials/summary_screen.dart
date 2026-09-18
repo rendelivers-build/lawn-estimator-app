@@ -65,8 +65,18 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       builder: (_) => _LaborDialog(initialRate: profile.laborRate),
     );
     if (result == null || !mounted) return;
+    // The line bills man-hours; the note keeps the original
+    // workers × hours breakdown (plus any user notation) so the detail
+    // survives on the estimate, the detail screen, and the printed PDF.
+    final breakdown =
+        '${_trimNumber(result.workers)} workers × ${_trimNumber(result.hours)} hrs';
+    final note = result.note.trim().isEmpty
+        ? breakdown
+        : '$breakdown — ${result.note.trim()}';
     setState(() {
       // LineItem.create derives extendedAmount from quantity × unitPrice.
+      // Repeated labor lines are intentional (multiple crews/phases), and
+      // a $0 rate is valid for freebies, notations, or unset pricing.
       _items.add(LineItem.create(
         estimateId: '',
         service: 'labor',
@@ -74,6 +84,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
         unit: 'man-hr',
         unitPrice: _trimNumber(result.rate),
         rateSource: 'owner',
+        note: note,
       ));
     });
   }
@@ -217,9 +228,25 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    serviceLabel(item.service),
-                    style: Theme.of(context).textTheme.titleMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        serviceLabel(item.service),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (item.note != null && item.note!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            item.note!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 _sourceBadge(item.rateSource),
@@ -322,11 +349,13 @@ class _LaborInput {
   final double workers;
   final double hours;
   final double rate;
+  final String note;
 
   const _LaborInput({
     required this.workers,
     required this.hours,
     required this.rate,
+    required this.note,
   });
 }
 
@@ -347,6 +376,7 @@ class _LaborDialogState extends State<_LaborDialog> {
   late final TextEditingController _rate = TextEditingController(
     text: widget.initialRate > 0 ? _trim(widget.initialRate) : '',
   );
+  final TextEditingController _note = TextEditingController();
 
   static String _trim(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
@@ -356,14 +386,24 @@ class _LaborDialogState extends State<_LaborDialog> {
     _workers.dispose();
     _hours.dispose();
     _rate.dispose();
+    _note.dispose();
     super.dispose();
   }
 
   double get _workersVal => double.tryParse(_workers.text.trim()) ?? 0;
   double get _hoursVal => double.tryParse(_hours.text.trim()) ?? 0;
-  double get _rateVal => double.tryParse(_rate.text.trim()) ?? 0;
-  double get _total => _workersVal * _hoursVal * _rateVal;
-  bool get _valid => _workersVal > 0 && _hoursVal > 0 && _rateVal > 0;
+
+  /// Null until the user types something; a $0 rate is valid (freebies,
+  /// notations, unset pricing), so only the empty field is invalid.
+  double? get _rateVal {
+    final text = _rate.text.trim();
+    if (text.isEmpty) return null;
+    final parsed = double.tryParse(text);
+    return (parsed == null || parsed < 0) ? null : parsed;
+  }
+
+  double get _total => _workersVal * _hoursVal * (_rateVal ?? 0);
+  bool get _valid => _workersVal > 0 && _hoursVal > 0 && _rateVal != null;
 
   @override
   Widget build(BuildContext context) {
@@ -399,18 +439,27 @@ class _LaborDialogState extends State<_LaborDialog> {
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
-              labelText: 'Rate (USD per man-hour)',
+              labelText: 'Rate (USD per man-hour, 0 allowed)',
               prefixText: '\$',
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _note,
+            decoration: const InputDecoration(
+              labelText: 'Note (optional)',
+              hintText: 'e.g. freebie, spring cleanup',
+              border: OutlineInputBorder(),
+            ),
+          ),
           const SizedBox(height: 16),
           Text(
             _valid
                 ? '${_trim(_workersVal)} workers × ${_trim(_hoursVal)} hrs × '
-                    '\$${_trim(_rateVal)}/hr = \$${_total.toStringAsFixed(2)}'
-                : 'Enter workers, hours, and rate.',
+                    '\$${_trim(_rateVal!)}/hr = \$${_total.toStringAsFixed(2)}'
+                : 'Enter workers, hours, and rate (0 allowed).',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
@@ -425,7 +474,8 @@ class _LaborDialogState extends State<_LaborDialog> {
               ? () => Navigator.of(context).pop(_LaborInput(
                     workers: _workersVal,
                     hours: _hoursVal,
-                    rate: _rateVal,
+                    rate: _rateVal!,
+                    note: _note.text,
                   ))
               : null,
           child: const Text('Add'),

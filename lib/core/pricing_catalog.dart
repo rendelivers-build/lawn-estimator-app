@@ -30,24 +30,29 @@ class PricingService {
 
 /// Every service the estimator can price.
 ///
-/// The five material services line up with the materials screen. `labor`
-/// is added from the summary screen as a single job line.
+/// The five material services line up with the materials screen. Labor is
+/// added from the summary screen via the labor dialog, whose man-hour rate
+/// comes from the company profile — labor intentionally has no pricing
+/// row here so there is exactly one labor-rate source.
 const List<PricingService> kPricingServices = [
   PricingService(id: 'sod', label: 'Sod / turf', unit: 'ft²'),
   PricingService(id: 'seed_new', label: 'Seed – new lawn', unit: 'lb'),
   PricingService(id: 'seed_overseed', label: 'Seed – overseed', unit: 'lb'),
   PricingService(id: 'fertilizer', label: 'Fertilizer', unit: 'lb'),
   PricingService(id: 'weed_feed', label: 'Weed & feed', unit: 'lb'),
-  PricingService(id: 'labor', label: 'Labor', unit: 'job'),
 ];
 
 /// Human-readable label for a service [id].
 ///
-/// Falls back to the id itself for unknown ids so the UI never renders
-/// a blank label.
+/// Unknown ids are title-cased (underscores become spaces) so the UI never
+/// renders a raw code like `labor`.
 String serviceLabel(String id) {
   for (final service in kPricingServices) {
     if (service.id == id) return service.label;
   }
-  return id;
+  return id
+      .split('_')
+      .map((w) =>
+          w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
 }

@@ -359,6 +359,10 @@ class LineItem {
   /// Where the price came from: 'owner' or 'area_default'.
   final String rateSource;
   final double extendedAmount;
+
+  /// Optional free-text note (e.g. labor breakdown "2 workers × 3 hrs",
+  /// or a user notation like "freebie"). Printed under the service label.
+  final String? note;
   final DateTime updatedAt;
 
   const LineItem({
@@ -370,6 +374,7 @@ class LineItem {
     required this.unitPrice,
     required this.rateSource,
     required this.extendedAmount,
+    this.note,
     required this.updatedAt,
   });
 
@@ -382,6 +387,7 @@ class LineItem {
     String? unitPrice,
     String? rateSource,
     double? extendedAmount,
+    String? note,
     DateTime? updatedAt,
   }) {
     return LineItem(
@@ -393,6 +399,7 @@ class LineItem {
       unitPrice: unitPrice ?? this.unitPrice,
       rateSource: rateSource ?? this.rateSource,
       extendedAmount: extendedAmount ?? this.extendedAmount,
+      note: note ?? this.note,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -406,6 +413,7 @@ class LineItem {
     required String unit,
     required String unitPrice,
     required String rateSource,
+    String? note,
   }) {
     final extended =
         quantity * (double.tryParse(unitPrice) ?? 0);
@@ -418,6 +426,7 @@ class LineItem {
       unitPrice: unitPrice,
       rateSource: rateSource,
       extendedAmount: extended,
+      note: note,
       updatedAt: DateTime.now(),
     );
   }
@@ -432,6 +441,7 @@ class LineItem {
       'unit_price': unitPrice,
       'rate_source': rateSource,
       'extended_amount': extendedAmount,
+      'note': note,
       'updated_at': updatedAt.toIso8601String(),
     };
   }
@@ -446,6 +456,7 @@ class LineItem {
       unitPrice: map['unit_price'] as String,
       rateSource: map['rate_source'] as String,
       extendedAmount: (map['extended_amount'] as num).toDouble(),
+      note: map['note'] as String?,
       updatedAt: DateTime.parse(map['updated_at'] as String),
     );
   }

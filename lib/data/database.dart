@@ -28,7 +28,7 @@ class AppDatabase {
     final path = p.join(dir, 'lawn_estimator.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -121,6 +121,7 @@ class AppDatabase {
         unit_price TEXT NOT NULL,
         rate_source TEXT NOT NULL,
         extended_amount REAL NOT NULL,
+        note TEXT,
         updated_at TEXT NOT NULL
       )
     ''');
@@ -175,6 +176,11 @@ class AppDatabase {
           labor_rate REAL NOT NULL DEFAULT 0
         )
       ''');
+    }
+    // v2 -> v3: optional free-text note on line items (labor breakdown,
+    // freebie notations, unset-pricing remarks).
+    if (oldVersion < 3 && newVersion >= 3) {
+      await db.execute('ALTER TABLE line_items ADD COLUMN note TEXT');
     }
   }
 }

@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/print/estimate_print_button.dart';
@@ -400,11 +401,23 @@ class _LineItemsCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              item.service,
+                              serviceLabel(item.service),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
+                            if (item.note != null && item.note!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  item.note!,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontStyle: FontStyle.italic,
+                                    color:
+                                        theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
                             const SizedBox(height: 2),
                             Text(
                               '${_qtyFormat.format(item.quantity)} '
