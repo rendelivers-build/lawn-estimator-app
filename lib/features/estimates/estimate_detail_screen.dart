@@ -156,6 +156,18 @@ class _EstimateBody extends StatelessWidget {
             const SizedBox(height: 12),
             _NoteCard(note: estimate.note!),
           ],
+          // Internal note: company-only, never prints. Display note:
+          // customer-facing, included on the estimate.
+          if (estimate.internalNote != null &&
+              estimate.internalNote!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _InternalNoteCard(note: estimate.internalNote!),
+          ],
+          if (estimate.displayNote != null &&
+              estimate.displayNote!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _DisplayNoteCard(note: estimate.displayNote!),
+          ],
           const SizedBox(height: 24),
           EstimatePrintButton(estimate: full),
           const SizedBox(height: 12),
@@ -362,6 +374,10 @@ class _LineItemsCard extends StatelessWidget {
         return 'Owner price';
       case 'area_default':
         return 'Area default';
+      case 'starter':
+        return 'Starter price';
+      case 'none':
+        return 'No price set';
       default:
         return rateSource;
     }
@@ -555,6 +571,81 @@ class _NoteCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
+            ),
+            const SizedBox(height: 8),
+            Text(note),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Company-only note: visible here, never printed on the estimate.
+class _InternalNoteCard extends StatelessWidget {
+  final String note;
+
+  const _InternalNoteCard({required this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.amber.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.lock_outline, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  'Internal note',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Company only — never prints.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Text(note),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Customer-facing note: also printed on the estimate.
+class _DisplayNoteCard extends StatelessWidget {
+  final String note;
+
+  const _DisplayNoteCard({required this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Customer note',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Included on the printed estimate.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             Text(note),

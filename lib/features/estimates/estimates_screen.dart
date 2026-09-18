@@ -15,6 +15,7 @@ import 'package:intl/intl.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
+import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// US-dollar currency formatter shared by the list cards.
@@ -34,6 +35,15 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
   void initState() {
     super.initState();
     _estimatesFuture = EstimateRepository().listEstimates();
+    // First-run tutorial: show once, after settings finish loading so the
+    // "Don't show this again" choice is respected.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(appSettingsProvider.notifier).ensureLoaded();
+      if (!mounted) return;
+      if (!ref.read(appSettingsProvider).tutorialSeen) {
+        Navigator.of(context).pushNamed('/tutorial');
+      }
+    });
   }
 
   /// Re-queries the database (used when returning from other screens).
@@ -69,9 +79,14 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<EstimateListItem>>(
-        future: _estimatesFuture,
-        builder: (context, snapshot) {
+      body: Stack(
+        children: [
+          // Faint home-screen background: subtle green dotted lines plus
+          // a grass watermark. Purely decorative — sits behind the list.
+          const Positioned.fill(child: _LawnBackground()),
+          FutureBuilder<List<EstimateListItem>>(
+            future: _estimatesFuture,
+            builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -103,8 +118,10 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
               );
             },
           );
-        },
-      ),
+            },
+          ),
+          ],
+        ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _startNewEstimate,
         icon: const Icon(Icons.add),
@@ -249,4 +266,51 @@ class _Thumbnail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Faint decorative home-screen background: subtle green dotted lines plus
+/// a grass watermark in the corner.
+class _LawnBackground extends StatelessWidget {
+  const _LawnBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(painter: _DottedLinesPainter()),
+        ),
+        Positioned(
+          right: -40,
+          bottom: -40,
+          child: Icon(
+            Icons.grass,
+            size: 220,
+            color: const Color(0x0D2E7D32),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Paints faint diagonal dotted lines across the whole area.
+class _DottedLinesPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0x1A2E7D32);
+    const step = 30.0;
+    const dotSpacing = 11.0;
+    // Diagonal lines (slope ~0.5), dotted so they stay whisper-light.
+    for (var startY = -size.height; startY < size.height; startY += step) {
+      var x = 0.0;
+      while (x < size.width) {
+        canvas.drawCircle(Offset(x, startY + x * 0.5), 1.4, paint);
+        x += dotSpacing;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

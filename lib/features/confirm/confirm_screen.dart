@@ -26,6 +26,7 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
   bool _takingPhoto = false;
   bool _photoAccepted = false;
   bool _matchesLawn = false;
+  bool _frontOfHouse = false;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
         // A fresh photo must be reviewed and re-confirmed.
         _photoAccepted = false;
         _matchesLawn = false;
+        _frontOfHouse = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -86,7 +88,7 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
     final photoPath = draft.photoPath;
     final canContinueWithPhoto = photoPath != null &&
         _photoAccepted &&
-        _matchesLawn &&
+        (_matchesLawn || _frontOfHouse) &&
         !_takingPhoto;
 
     return Scaffold(
@@ -97,12 +99,13 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
           _buildSummaryCard(draft),
           const SizedBox(height: 12),
           const Text(
-            'Take one photo to confirm the lawn you outlined. '
+            'Take one photo to confirm the lawn you outlined — '
+            'a shot of the lawn itself, or the front of the house. '
             'The photo stays in this app on this device.',
           ),
           const SizedBox(height: 12),
           if (photoPath == null) _buildTakePhotoButton() else _buildPhotoCard(photoPath),
-          if (photoPath != null && _photoAccepted) _buildMatchCheckbox(),
+          if (photoPath != null && _photoAccepted) _buildCheckboxes(),
           const SizedBox(height: 8),
           _buildNoteField(),
           const SizedBox(height: 16),
@@ -192,13 +195,32 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
     );
   }
 
-  Widget _buildMatchCheckbox() {
-    return CheckboxListTile(
-      value: _matchesLawn,
-      controlAffinity: ListTileControlAffinity.leading,
-      contentPadding: EdgeInsets.zero,
-      title: const Text('The outlined area matches the lawn shown.'),
-      onChanged: (value) => setState(() => _matchesLawn = value ?? false),
+  /// The two photo confirmations are mutually exclusive: a photo either
+  /// shows the lawn or the front of the house.
+  Widget _buildCheckboxes() {
+    return Column(
+      children: [
+        CheckboxListTile(
+          value: _matchesLawn,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('The outlined area matches the lawn shown.'),
+          onChanged: (value) => setState(() {
+            _matchesLawn = value ?? false;
+            if (_matchesLawn) _frontOfHouse = false;
+          }),
+        ),
+        CheckboxListTile(
+          value: _frontOfHouse,
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('This photo is the front of the house.'),
+          onChanged: (value) => setState(() {
+            _frontOfHouse = value ?? false;
+            if (_frontOfHouse) _matchesLawn = false;
+          }),
+        ),
+      ],
     );
   }
 

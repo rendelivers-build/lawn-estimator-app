@@ -24,6 +24,8 @@ class EstimateDraft {
     this.activeZone = 0,
     this.photoPath,
     this.note,
+    this.internalNote,
+    this.displayNote,
     this.confirmed = false,
     this.materials = const [],
     this.lineItems = const [],
@@ -50,6 +52,12 @@ class EstimateDraft {
 
   /// Optional free-text note from the confirm screen.
   final String? note;
+
+  /// Company-only note: visible in the app, never printed on estimates.
+  final String? internalNote;
+
+  /// Customer-facing note: printed on the estimate.
+  final String? displayNote;
 
   /// True once the user confirms the outlined area matches the photo.
   final bool confirmed;
@@ -92,6 +100,10 @@ class EstimateDraft {
     bool clearPhoto = false,
     String? note,
     bool clearNote = false,
+    String? internalNote,
+    bool clearInternalNote = false,
+    String? displayNote,
+    bool clearDisplayNote = false,
     bool? confirmed,
     List<MaterialEstimate>? materials,
     List<LineItem>? lineItems,
@@ -107,6 +119,8 @@ class EstimateDraft {
       // distinguish "not passed" from "passed as null".
       photoPath: clearPhoto ? null : (photoPath ?? this.photoPath),
       note: clearNote ? null : (note ?? this.note),
+      internalNote: clearInternalNote ? null : (internalNote ?? this.internalNote),
+      displayNote: clearDisplayNote ? null : (displayNote ?? this.displayNote),
       confirmed: confirmed ?? this.confirmed,
       materials: materials ?? this.materials,
       lineItems: lineItems ?? this.lineItems,
@@ -210,6 +224,18 @@ class EstimateDraftNotifier extends StateNotifier<EstimateDraft> {
   /// Sets (or clears, when null) the optional note.
   void setNote(String? note) {
     state = state.copyWith(note: note, clearNote: note == null);
+  }
+
+  /// Sets (or clears, when null) the company-only internal note.
+  void setInternalNote(String? note) {
+    state = state.copyWith(
+        internalNote: note, clearInternalNote: note == null);
+  }
+
+  /// Sets (or clears, when null) the customer-facing display note.
+  void setDisplayNote(String? note) {
+    state =
+        state.copyWith(displayNote: note, clearDisplayNote: note == null);
   }
 
   /// Records whether the user confirmed the outline matches the photo.

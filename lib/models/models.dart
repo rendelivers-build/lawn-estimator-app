@@ -22,6 +22,13 @@ class Estimate {
   final ConfirmationStatus confirmationStatus;
   final String? photoPath;
   final String? note;
+
+  /// Company-only note: shown in the app, never printed on the estimate.
+  final String? internalNote;
+
+  /// Customer-facing note: printed on the estimate.
+  final String? displayNote;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -36,6 +43,8 @@ class Estimate {
     this.confirmationStatus = ConfirmationStatus.unconfirmed,
     this.photoPath,
     this.note,
+    this.internalNote,
+    this.displayNote,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -51,6 +60,8 @@ class Estimate {
     ConfirmationStatus? confirmationStatus,
     String? photoPath,
     String? note,
+    String? internalNote,
+    String? displayNote,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -65,6 +76,8 @@ class Estimate {
       confirmationStatus: confirmationStatus ?? this.confirmationStatus,
       photoPath: photoPath ?? this.photoPath,
       note: note ?? this.note,
+      internalNote: internalNote ?? this.internalNote,
+      displayNote: displayNote ?? this.displayNote,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -106,6 +119,8 @@ class Estimate {
       'confirmation_status': confirmationStatus.name,
       'photo_path': photoPath,
       'note': note,
+      'internal_note': internalNote,
+      'display_note': displayNote,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -126,6 +141,8 @@ class Estimate {
       ),
       photoPath: map['photo_path'] as String?,
       note: map['note'] as String?,
+      internalNote: map['internal_note'] as String?,
+      displayNote: map['display_note'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
     );
@@ -628,6 +645,29 @@ class CompanyProfile {
       phone: (map['phone'] as String?) ?? '',
       email: (map['email'] as String?) ?? '',
       laborRate: (map['labor_rate'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+/// App-level settings: Beginner/Expert mode and tutorial state.
+class AppSettings {
+  static const String modeBeginner = 'beginner';
+  static const String modeExpert = 'expert';
+
+  final String mode;
+  final bool tutorialSeen;
+
+  const AppSettings({
+    this.mode = modeBeginner,
+    this.tutorialSeen = false,
+  });
+
+  bool get isExpert => mode == modeExpert;
+
+  AppSettings copyWith({String? mode, bool? tutorialSeen}) {
+    return AppSettings(
+      mode: mode ?? this.mode,
+      tutorialSeen: tutorialSeen ?? this.tutorialSeen,
     );
   }
 }

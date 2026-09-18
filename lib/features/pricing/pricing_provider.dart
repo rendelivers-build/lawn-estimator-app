@@ -14,8 +14,12 @@ import 'package:lawn_estimator/models/models.dart';
 
 /// A resolved price for a service plus where it came from.
 ///
-/// [source] is `'owner'` when the owner set their own price, otherwise
-/// `'area_default'`.
+/// [source] is one of:
+/// - `'owner'` — the owner set their own price;
+/// - `'area_default'` — the area default reference rate;
+/// - `'starter'` — the built-in beginner-mode starter price (used only
+///   when [mode] is Beginner and no owner or area-default price exists);
+/// - `'none'` — nothing set (expert mode with no owner price).
 class ResolvedRate {
   final double price;
   final String source;
@@ -48,14 +52,22 @@ class PricingNotifier extends StateNotifier<Map<String, PricingSettings>> {
     state = map;
   }
 
-  /// Resolves the effective price for [service]:
-  /// owner price, else area default, else 0.0.
-  ResolvedRate resolve(String service) {
+  /// Resolves the effective price for [service].
+  ///
+  /// Owner price wins. Failing that, the area default. Failing that, the
+  /// built-in starter price when [mode] is Beginner — so a beginner never
+  /// faces a `$0` default. In Expert mode there is no starter fallback:
+  /// the owner is expected to enter every price themselves, so unset
+  /// pricing reports source `'none'` (and price 0.0).
+  ResolvedRate resolve(String service, {String mode = 'beginner'}) {
     final settings = state[service];
     final owner = settings?.ownerPrice;
     if (owner != null) return ResolvedRate(owner, 'owner');
     final areaDefault = settings?.areaDefaultPrice;
     if (areaDefault != null) return ResolvedRate(areaDefault, 'area_default');
+    if (mode == 'expert') return const ResolvedRate(0.0, 'none');
+    final starter = kStarterPrices[service];
+    if (starter != null) return ResolvedRate(starter, 'starter');
     return const ResolvedRate(0.0, 'area_default');
   }
 

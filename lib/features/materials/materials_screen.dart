@@ -10,6 +10,8 @@ import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
 import 'package:lawn_estimator/features/pricing/pricing_provider.dart';
+import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
+import 'package:lawn_estimator/features/shared/service_info_button.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// Static config for one material card.
@@ -178,7 +180,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
         exact: result.orderAreaFt2,
         buy: result.units,
         exactText: '${result.orderAreaFt2.toStringAsFixed(0)} ft² (with waste)',
-        buyText: '${result.units} units',
+        buyText: '${result.units} units/pallets',
       );
     }
     final rate = _parse(_rateCtrls[cfg.serviceId]!, cfg.defaultRate);
@@ -217,11 +219,13 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       final calc = _compute(cfg, areaFt2);
       if (calc.error != null) continue;
 
-      // Purchase unit: sod is sold by the unit (roll/pallet), granular by bag.
-      final unitLabel = cfg.isSod ? 'units' : 'bags';
+      // Purchase unit: sod is sold by the unit/pallet (roll/pallet),
+      // granular materials by bag.
+      final unitLabel = cfg.isSod ? 'units/pallets' : 'bags';
       final quantity = calc.buy.toDouble();
-      final resolved =
-          ref.read(pricingProvider.notifier).resolve(cfg.serviceId);
+      final resolved = ref
+          .read(pricingProvider.notifier)
+          .resolve(cfg.serviceId, mode: ref.read(appSettingsProvider).mode);
 
       materials.add(MaterialEstimate.create(
         // The repository assigns the real estimate id on save; keep the
@@ -272,21 +276,37 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Lawn area: ${formatFt2(areaFt2)}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Starter rates are generic — check the product label.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              // Tap the lawn-area card to jump back to the map with the
+              // same measurement.
+              onTap: () => Navigator.of(context).popUntil(
+                (route) => route.settings.name == '/measure',
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Lawn area: ${formatFt2(areaFt2)}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        const Icon(Icons.map_outlined),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Starter rates are generic — check the product label. '
+                      'Tap to view on the map.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -313,7 +333,12 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
-        title: Text(serviceLabel(id)),
+        title: Row(
+          children: [
+            Expanded(child: Text(serviceLabel(id))),
+            ServiceInfoButton(serviceId: id),
+          ],
+        ),
         subtitle: Text(calc.error ?? 'Buy: ${calc.buyText}'),
         children: [
           Padding(

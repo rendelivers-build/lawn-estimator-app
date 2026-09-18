@@ -9,6 +9,7 @@ import 'package:flutter_google_places_sdk/flutter_google_places_sdk.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:lawn_estimator/core/config.dart';
+import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
 
 /// First screen of the flow: find the property address, then measure.
@@ -38,6 +39,9 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
   /// Guards against out-of-order autocomplete responses.
   int _requestId = 0;
 
+  /// Recently used addresses, newest first.
+  List<RecentAddress> _recents = [];
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +52,12 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
     }
     // Refresh the clear-button affordance as the user types.
     _controller.addListener(() => setState(() {}));
+    _loadRecents();
+  }
+
+  Future<void> _loadRecents() async {
+    final recents = await EstimateRepository().listRecentAddresses();
+    if (mounted) setState(() => _recents = recents);
   }
 
   @override
@@ -139,8 +149,16 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
         });
         return;
       }
+      final label = place?.address ?? prediction.fullText;
+      await EstimateRepository().upsertRecentAddress(
+        placeId: prediction.placeId,
+        label: label,
+        latitude: latLng.lat,
+        longitude: latLng.lng,
+      );
+      _loadRecents();
       ref.read(estimateDraftProvider.notifier).startNew(
-            addressLabel: place?.address ?? prediction.fullText,
+            addressLabel: label,
             placeId: prediction.placeId,
             lat: latLng.lat,
             lng: latLng.lng,
@@ -155,6 +173,34 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
         _error = 'Could not load that address. Try again.';
       });
     }
+  }
+
+  /// Tapping a recent address skips the places fetch — the coordinates
+  /// are already stored locally.
+  Future<void> _selectRecent(RecentAddress recent) async {
+    await EstimateRepository().upsertRecentAddress(
+      placeId: recent.placeId,
+      label: recent.label,
+      latitude: recent.latitude,
+      longitude: recent.longitude,
+    );
+    ref.read(estimateDraftProvider.notifier).startNew(
+          addressLabel: recent.label,
+          placeId: recent.placeId,
+          lat: recent.latitude,
+          lng: recent.longitude,
+        );
+    if (!mounted) return;
+    Navigator.pushNamed(context, '/measure');
+  }
+
+  /// Recents whose label matches [query] (case-insensitive), newest first.
+  List<RecentAddress> _matchingRecents(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return _recents
+        .where((r) => r.label.toLowerCase().contains(q))
+        .toList();
   }
 
   @override
@@ -211,15 +257,23 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
         ),
       );
     }
-    if (_controller.text.trim().isEmpty) {
-      return const Center(
-        child: Text('Type an address to search.'),
+    final query = _controller.text.trim();
+    if (query.isEmpty) {
+      // Idle: show recently used addresses, if any.
+      if (_recents.isEmpty) {
+        return const Center(
+          child: Text('Type an address to search.'),
+        );
+      }
+      return SingleChildScrollView(
+        child: _buildRecentsList(_recents, showHeader: true),
       );
     }
-    if (_loading && _predictions.isEmpty) {
+    final matches = _matchingRecents(query);
+    if (_loading && _predictions.isEmpty && matches.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_predictions.isEmpty) {
+    if (_predictions.isEmpty && matches.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -230,18 +284,50 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
         ),
       );
     }
-    return ListView.separated(
-      itemCount: _predictions.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final prediction = _predictions[index];
-        return ListTile(
-          leading: const Icon(Icons.location_on_outlined),
-          title: Text(prediction.primaryText),
-          subtitle: Text(prediction.secondaryText),
-          onTap: () => _selectPrediction(prediction),
-        );
-      },
+    return ListView(
+      children: [
+        if (matches.isNotEmpty) _buildRecentsList(matches, showHeader: true),
+        for (final prediction in _predictions)
+          Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.location_on_outlined),
+                title: Text(prediction.primaryText),
+                subtitle: Text(prediction.secondaryText),
+                onTap: () => _selectPrediction(prediction),
+              ),
+              const Divider(height: 1),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRecentsList(List<RecentAddress> recents,
+      {required bool showHeader}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showHeader)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              'Recent',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        for (final recent in recents)
+          Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text(recent.label),
+                onTap: () => _selectRecent(recent),
+              ),
+              const Divider(height: 1),
+            ],
+          ),
+      ],
     );
   }
 

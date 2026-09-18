@@ -41,7 +41,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
   }
 
   Future<void> _buildVertexIcon() async {
-    const size = 30.0;
+    // 20-px dot: noticeably smaller than the previous 30-px dots, so the
+    // vertex underneath stays visible at high zoom.
+    const size = 20.0;
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     final center = const ui.Offset(size / 2, size / 2);
@@ -189,6 +191,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
             markerId: MarkerId('zone_${i}_vtx_$j'),
             position: zone[j],
             draggable: true,
+            // Consume tap/drag gestures so long-pressing a dot drags it
+            // instead of moving the map underneath it.
+            consumeTapEvents: true,
             // Center the dot on the vertex; the default pin anchors at its
             // tip and covers the outline underneath.
             anchor: const Offset(0.5, 0.5),

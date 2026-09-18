@@ -1,5 +1,10 @@
 /// Pricing settings screen: the owner sets their own prices and the
 /// area-default reference rates used when they haven't.
+///
+/// Also hosts the Beginner / Expert experience mode. In Beginner mode the
+/// built-in starter prices fill in wherever the owner hasn't set a price,
+/// so estimates never come out $0. Expert mode disables the starter
+/// fallback and expects the owner to enter every price.
 library;
 
 import 'package:flutter/material.dart';
@@ -7,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:lawn_estimator/features/pricing/pricing_provider.dart';
+import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
+import 'package:lawn_estimator/features/shared/service_info_button.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// Lets the owner manage per-service pricing.
@@ -19,12 +26,69 @@ class PricingSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pricing = ref.watch(pricingProvider);
+    final appSettings = ref.watch(appSettingsProvider);
+    final expert = appSettings.isExpert;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Experience mode',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    expert
+                        ? 'Expert mode: no starter prices — enter your own '
+                            'price for every service below.'
+                        : 'Beginner mode: starter prices fill in wherever you '
+                            'haven\'t set one, so estimates never come out '
+                            '\$0. Enter your company info, then adjust any '
+                            'price below.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                            value: 'beginner', label: Text('Beginner')),
+                        ButtonSegment(
+                            value: 'expert', label: Text('Expert')),
+                      ],
+                      selected: {appSettings.mode},
+                      onSelectionChanged: (selected) async {
+                        final mode = selected.first;
+                        await ref
+                            .read(appSettingsProvider.notifier)
+                            .setMode(mode);
+                        if (mode == AppSettings.modeExpert &&
+                            context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Expert mode on — set your own price for '
+                                'each service below.',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: ListTile(
               leading: const Icon(Icons.business),
@@ -42,7 +106,8 @@ class PricingSettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 "Your prices always win. When you haven't set a price, the "
-                "area default fills in — it's a reference rate, not a market quote.",
+                "area default fills in — it's a reference rate, not a market quote."
+                "${expert ? '' : ' In Beginner mode the starter price fills in last.'}",
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -52,6 +117,7 @@ class PricingSettingsScreen extends ConsumerWidget {
             _ServicePriceRow(
               service: service,
               settings: pricing[service.id],
+              expert: expert,
             ),
         ],
       ),
@@ -66,12 +132,20 @@ class PricingSettingsScreen extends ConsumerWidget {
 class _ServicePriceRow extends ConsumerWidget {
   final PricingService service;
   final PricingSettings? settings;
+  final bool expert;
 
-  const _ServicePriceRow({required this.service, required this.settings});
+  const _ServicePriceRow({
+    required this.service,
+    required this.settings,
+    required this.expert,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(pricingProvider.notifier);
+    final starter = kStarterPrices[service.id];
+    final hasPrice = (settings?.ownerPrice != null) ||
+        (settings?.areaDefaultPrice != null);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -88,12 +162,24 @@ class _ServicePriceRow extends ConsumerWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
+                ServiceInfoButton(serviceId: service.id),
                 Chip(
                   label: Text('per ${service.unit}'),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
+            if (!expert && !hasPrice && starter != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Starter price: \$${_trim(starter)} per ${service.unit}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.blue.shade800),
+                ),
+              ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -123,6 +209,9 @@ class _ServicePriceRow extends ConsumerWidget {
       ),
     );
   }
+
+  static String _trim(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
 }
 
 /// Numeric price field that reports a parsed value on submit.

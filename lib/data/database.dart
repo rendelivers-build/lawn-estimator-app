@@ -28,7 +28,7 @@ class AppDatabase {
     final path = p.join(dir, 'lawn_estimator.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -54,6 +54,8 @@ class AppDatabase {
         confirmation_status TEXT NOT NULL,
         photo_path TEXT,
         note TEXT,
+        internal_note TEXT,
+        display_note TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -154,6 +156,25 @@ class AppDatabase {
         labor_rate REAL NOT NULL DEFAULT 0
       )
     ''');
+
+    // Recently used addresses, for type-ahead on the address search screen.
+    await db.execute('''
+      CREATE TABLE recent_addresses (
+        place_id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        last_used TEXT NOT NULL
+      )
+    ''');
+
+    // App-level settings (mode, tutorial state). One row per key.
+    await db.execute('''
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(
@@ -181,6 +202,27 @@ class AppDatabase {
     // freebie notations, unset-pricing remarks).
     if (oldVersion < 3 && newVersion >= 3) {
       await db.execute('ALTER TABLE line_items ADD COLUMN note TEXT');
+    }
+    // v3 -> v4: internal + display notes on estimates, recent-address
+    // history for the address search, and app-level settings.
+    if (oldVersion < 4 && newVersion >= 4) {
+      await db.execute('ALTER TABLE estimates ADD COLUMN internal_note TEXT');
+      await db.execute('ALTER TABLE estimates ADD COLUMN display_note TEXT');
+      await db.execute('''
+        CREATE TABLE recent_addresses (
+          place_id TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          last_used TEXT NOT NULL
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      ''');
     }
   }
 }

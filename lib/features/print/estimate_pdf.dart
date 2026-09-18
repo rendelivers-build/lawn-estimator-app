@@ -138,7 +138,7 @@ pw.Widget _buildHeader(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  businessName,
+                  _sanitize(businessName),
                   style: pw.TextStyle(
                     fontSize: 22,
                     fontWeight: pw.FontWeight.bold,
@@ -147,7 +147,7 @@ pw.Widget _buildHeader(
                 for (final line in contactLines) ...[
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    line,
+                    _sanitize(line),
                     style: const pw.TextStyle(
                       fontSize: 10,
                       color: PdfColors.grey700,
@@ -199,9 +199,21 @@ pw.Widget _buildJobSection(Estimate estimate, int zoneCount) {
       _jobRow('Address', estimate.addressLabel),
       _jobRow('Measured area', _formatArea(estimate.areaFt2)),
       _jobRow('Zones', '$zoneCount'),
+      // Customer-facing display note prints; the internal note never does.
+      if (estimate.displayNote != null && estimate.displayNote!.isNotEmpty)
+        _jobRow('Note', estimate.displayNote!),
     ],
   );
 }
+
+/// The PDF font renders some non-ASCII glyphs (en/em dashes, ×) as missing-
+/// glyph tofu boxes, so user-typed and composed text gets ASCII-ified
+/// before printing.
+String _sanitize(String text) => text
+    .replaceAll('–', '-')
+    .replaceAll('—', '-')
+    .replaceAll('×', 'x')
+    .replaceAll('•', '-');
 
 pw.Widget _jobRow(String label, String value) {
   return pw.Padding(
@@ -217,7 +229,8 @@ pw.Widget _jobRow(String label, String value) {
           ),
         ),
         pw.Expanded(
-          child: pw.Text(value, style: const pw.TextStyle(fontSize: 11)),
+          child: pw.Text(_sanitize(value),
+              style: const pw.TextStyle(fontSize: 11)),
         ),
       ],
     ),
@@ -244,7 +257,7 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
         padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         alignment: right ? pw.Alignment.centerRight : pw.Alignment.centerLeft,
         child: pw.Text(
-          text,
+          _sanitize(text),
           style: cellStyle.copyWith(
             fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
           ),
@@ -336,8 +349,8 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
 /// no unit.
 const Map<String, ({String label, String unit, String? purchaseUnit})>
     _materialLabels = {
-  'seed_new': (label: 'Seed – new lawn', unit: 'lb', purchaseUnit: null),
-  'seed_overseed': (label: 'Seed – overseed', unit: 'lb', purchaseUnit: null),
+  'seed_new': (label: 'Seed - new lawn', unit: 'lb', purchaseUnit: null),
+  'seed_overseed': (label: 'Seed - overseed', unit: 'lb', purchaseUnit: null),
   'fertilizer': (label: 'Fertilizer', unit: 'lb', purchaseUnit: null),
   'lime': (label: 'Lime', unit: 'lb', purchaseUnit: null),
   'mulch': (label: 'Mulch', unit: 'cu yd', purchaseUnit: null),

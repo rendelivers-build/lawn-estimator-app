@@ -61,6 +61,8 @@ class EstimateRepository {
           : ConfirmationStatus.unconfirmed,
       photoPath: draft.photoPath,
       note: draft.note,
+      internalNote: draft.internalNote,
+      displayNote: draft.displayNote,
       createdAt: now,
       updatedAt: now,
     );
@@ -266,6 +268,87 @@ class EstimateRepository {
     await db.insert(
       'company_profile',
       profile.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+}
+
+/// One recently used address, for type-ahead on the address search screen.
+class RecentAddress {
+  final String placeId;
+  final String label;
+  final double latitude;
+  final double longitude;
+
+  const RecentAddress({
+    required this.placeId,
+    required this.label,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  factory RecentAddress.fromMap(Map<String, dynamic> map) {
+    return RecentAddress(
+      placeId: map['place_id'] as String,
+      label: map['label'] as String,
+      latitude: (map['latitude'] as num).toDouble(),
+      longitude: (map['longitude'] as num).toDouble(),
+    );
+  }
+}
+
+/// Recents + app-settings persistence, appended to [EstimateRepository].
+extension RecentsExtension on EstimateRepository {
+  /// Records an address as recently used (refreshes its recency on repeat).
+  Future<void> upsertRecentAddress({
+    required String placeId,
+    required String label,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final db = await AppDatabase.database;
+    await db.insert(
+      'recent_addresses',
+      {
+        'place_id': placeId,
+        'label': label,
+        'latitude': latitude,
+        'longitude': longitude,
+        'last_used': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Most-recently-used addresses, newest first, capped at [limit].
+  Future<List<RecentAddress>> listRecentAddresses({int limit = 10}) async {
+    final db = await AppDatabase.database;
+    final rows = await db.query(
+      'recent_addresses',
+      orderBy: 'last_used DESC',
+      limit: limit,
+    );
+    return rows.map(RecentAddress.fromMap).toList();
+  }
+}
+
+/// App-level key/value settings, appended to [EstimateRepository].
+extension AppSettingsExtension on EstimateRepository {
+  /// Loads all stored app settings as a key/value map.
+  Future<Map<String, String>> loadAppSettings() async {
+    final db = await AppDatabase.database;
+    final rows = await db.query('app_settings');
+    return {
+      for (final row in rows) row['key'] as String: row['value'] as String,
+    };
+  }
+
+  /// Stores one app setting.
+  Future<void> saveAppSetting(String key, String value) async {
+    final db = await AppDatabase.database;
+    await db.insert(
+      'app_settings',
+      {'key': key, 'value': value},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }

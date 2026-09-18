@@ -29,7 +29,9 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
         ),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            // Vertical 16 gives floating labels room: 12 clipped them on
+            // some devices (numeric fields lost their top stroke).
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
