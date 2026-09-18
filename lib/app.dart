@@ -11,6 +11,7 @@ import 'package:lawn_estimator/features/materials/materials_screen.dart';
 import 'package:lawn_estimator/features/materials/summary_screen.dart';
 import 'package:lawn_estimator/features/pricing/pricing_settings_screen.dart';
 import 'package:lawn_estimator/features/estimates/estimate_detail_screen.dart';
+import 'package:lawn_estimator/features/settings/company_profile_screen.dart';
 
 /// Root widget of the Lawn Estimator app.
 class LawnEstimatorApp extends StatelessWidget {
@@ -44,6 +45,8 @@ class LawnEstimatorApp extends StatelessWidget {
         builder = (_) => const SummaryScreen();
       case '/pricing':
         builder = (_) => const PricingSettingsScreen();
+      case '/company':
+        builder = (_) => const CompanyProfileScreen();
       case '/estimate':
         final estimateId = settings.arguments as String?;
         if (estimateId == null) {

@@ -2,6 +2,8 @@
 /// to adjust, and get a live area readout before continuing.
 library;
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -26,6 +28,46 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
   /// Geographic center of the contiguous US — fallback when the draft has
   /// no center (should not normally happen after address search).
   static const LatLng _fallbackCenter = LatLng(39.8283, -98.5795);
+
+  /// Small dot icon for zone vertices, built once. The default map pin is
+  /// huge next to a small lawn at max zoom, so vertices get a compact dot
+  /// anchored at its center instead.
+  BitmapDescriptor? _vertexIcon;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildVertexIcon();
+  }
+
+  Future<void> _buildVertexIcon() async {
+    const size = 30.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final center = const ui.Offset(size / 2, size / 2);
+    canvas.drawCircle(
+      center,
+      size / 2 - 2,
+      ui.Paint()..color = const Color(0xFFD32F2F),
+    );
+    canvas.drawCircle(
+      center,
+      size / 2 - 3.5,
+      ui.Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final bytes =
+        await image.toByteData(format: ui.ImageByteFormat.png);
+    if (!mounted || bytes == null) return;
+    setState(() {
+      _vertexIcon =
+          BitmapDescriptor.bytes(bytes.buffer.asUint8List());
+    });
+  }
 
   @override
   void dispose() {
@@ -147,6 +189,10 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
             markerId: MarkerId('zone_${i}_vtx_$j'),
             position: zone[j],
             draggable: true,
+            // Center the dot on the vertex; the default pin anchors at its
+            // tip and covers the outline underneath.
+            anchor: const Offset(0.5, 0.5),
+            icon: _vertexIcon ?? BitmapDescriptor.defaultMarker,
             onDragEnd: (pos) => notifier.moveVertex(i, j, pos),
           ),
         );

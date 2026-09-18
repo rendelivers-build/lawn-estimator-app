@@ -80,7 +80,7 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Could not load estimates.\n${snapshot.error}',
+                  'Could not load estimates. Try again.',
                   textAlign: TextAlign.center,
                 ),
               ),

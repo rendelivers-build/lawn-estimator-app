@@ -21,10 +21,22 @@ class PricingSettingsScreen extends ConsumerWidget {
     final pricing = ref.watch(pricingProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Pricing')),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.business),
+              title: const Text('Company profile'),
+              subtitle: const Text(
+                'Your business name and contact info for estimate letterheads.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).pushNamed('/company'),
+            ),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -138,7 +150,6 @@ class _PriceField extends StatelessWidget {
         labelText: label,
         prefixText: '\$',
         border: const OutlineInputBorder(),
-        isDense: true,
       ),
       onFieldSubmitted: (value) {
         final trimmed = value.trim();

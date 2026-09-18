@@ -70,7 +70,7 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
       if (!mounted) return;
       setState(() => _takingPhoto = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not take photo: $e')),
+        SnackBar(content: const Text('Could not take photo. Try again.')),
       );
     }
   }

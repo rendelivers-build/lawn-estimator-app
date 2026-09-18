@@ -249,4 +249,24 @@ class EstimateRepository {
     final rows = await db.query('pricing_settings');
     return rows.map(PricingSettings.fromMap).toList();
   }
+
+  /// Loads the owner's company profile; returns a blank profile when
+  /// none has been saved yet.
+  Future<CompanyProfile> loadCompanyProfile() async {
+    final db = await _db();
+    final rows =
+        await db.query('company_profile', where: 'id = ?', whereArgs: [1], limit: 1);
+    if (rows.isEmpty) return const CompanyProfile();
+    return CompanyProfile.fromMap(rows.first);
+  }
+
+  /// Saves the owner's company profile (single row, id always 1).
+  Future<void> saveCompanyProfile(CompanyProfile profile) async {
+    final db = await _db();
+    await db.insert(
+      'company_profile',
+      profile.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 }

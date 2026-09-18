@@ -9,7 +9,6 @@ import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
-import 'package:lawn_estimator/features/pricing/pricing_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// Shows the draft's line items with editable quantities and unit prices.
@@ -29,6 +28,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   /// Working copy of the draft's line items; synced back on save.
   late List<LineItem> _items;
   bool _saving = false;
+
+  /// Set once the estimate is saved. The draft reset zeroes the area, which
+  /// must not trip the no-area guard below while we navigate home — that
+  /// race popped the freshly pushed home route and left a black screen.
+  bool _saved = false;
 
   @override
   void initState() {
@@ -51,18 +55,25 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   double get _grandTotal =>
       _items.fold(0.0, (sum, item) => sum + item.extendedAmount);
 
-  /// Adds a single labor line priced from the resolved labor rate.
-  void _addLabor() {
-    final resolved = ref.read(pricingProvider.notifier).resolve('labor');
+  /// Opens the labor dialog: workers × hours at the owner's man-hour rate
+  /// (prefilled from the company profile). The line bills man-hours.
+  Future<void> _addLabor() async {
+    final profile = await EstimateRepository().loadCompanyProfile();
+    if (!mounted) return;
+    final result = await showDialog<_LaborInput>(
+      context: context,
+      builder: (_) => _LaborDialog(initialRate: profile.laborRate),
+    );
+    if (result == null || !mounted) return;
     setState(() {
       // LineItem.create derives extendedAmount from quantity × unitPrice.
       _items.add(LineItem.create(
         estimateId: '',
         service: 'labor',
-        quantity: 1,
-        unit: 'job',
-        unitPrice: _trimNumber(resolved.price),
-        rateSource: resolved.source,
+        quantity: result.workers * result.hours,
+        unit: 'man-hr',
+        unitPrice: _trimNumber(result.rate),
+        rateSource: 'owner',
       ));
     });
   }
@@ -80,6 +91,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       notifier.setMaterials(current.materials, _items);
 
       await EstimateRepository().saveDraft(ref.read(estimateDraftProvider));
+      // Flag BEFORE reset: the reset zeroes the draft area and would
+      // otherwise trip the no-area guard's post-frame pop after navigation.
+      if (mounted) setState(() => _saved = true);
       notifier.reset();
 
       if (!mounted) return;
@@ -88,9 +102,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       );
       Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     } catch (e) {
+      debugPrint('Save estimate failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save the estimate: $e')),
+        const SnackBar(
+            content: Text('Could not save the estimate. Try again.')),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -102,7 +118,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     final draft = ref.watch(estimateDraftProvider);
 
     // Guard: nothing to summarize without a measured area.
-    if (draft.totalAreaFt2 <= 0) {
+    // Skipped after a successful save — the draft reset zeroes the area
+    // while we navigate home.
+    if (!_saved && draft.totalAreaFt2 <= 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -220,7 +238,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
-                      isDense: true,
                     ),
                     onChanged: (value) {
                       final parsed = double.tryParse(value.trim());
@@ -243,7 +260,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       labelText: 'Price (${item.unit})',
                       prefixText: '\$',
                       border: const OutlineInputBorder(),
-                      isDense: true,
                     ),
                     onChanged: (value) {
                       final trimmed = value.trim();
@@ -299,4 +315,122 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
 
   static String _trimNumber(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+}
+
+/// Workers × hours × rate, collected by [_LaborDialog].
+class _LaborInput {
+  final double workers;
+  final double hours;
+  final double rate;
+
+  const _LaborInput({
+    required this.workers,
+    required this.hours,
+    required this.rate,
+  });
+}
+
+/// Dialog for adding a labor line: number of workers, hours on the job,
+/// and the man-hour rate (prefilled from the company profile).
+class _LaborDialog extends StatefulWidget {
+  final double initialRate;
+
+  const _LaborDialog({required this.initialRate});
+
+  @override
+  State<_LaborDialog> createState() => _LaborDialogState();
+}
+
+class _LaborDialogState extends State<_LaborDialog> {
+  late final TextEditingController _workers = TextEditingController(text: '2');
+  late final TextEditingController _hours = TextEditingController();
+  late final TextEditingController _rate = TextEditingController(
+    text: widget.initialRate > 0 ? _trim(widget.initialRate) : '',
+  );
+
+  static String _trim(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+
+  @override
+  void dispose() {
+    _workers.dispose();
+    _hours.dispose();
+    _rate.dispose();
+    super.dispose();
+  }
+
+  double get _workersVal => double.tryParse(_workers.text.trim()) ?? 0;
+  double get _hoursVal => double.tryParse(_hours.text.trim()) ?? 0;
+  double get _rateVal => double.tryParse(_rate.text.trim()) ?? 0;
+  double get _total => _workersVal * _hoursVal * _rateVal;
+  bool get _valid => _workersVal > 0 && _hoursVal > 0 && _rateVal > 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add labor'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _workers,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Workers',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _hours,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Hours',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _rate,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Rate (USD per man-hour)',
+              prefixText: '\$',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _valid
+                ? '${_trim(_workersVal)} workers × ${_trim(_hoursVal)} hrs × '
+                    '\$${_trim(_rateVal)}/hr = \$${_total.toStringAsFixed(2)}'
+                : 'Enter workers, hours, and rate.',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _valid
+              ? () => Navigator.of(context).pop(_LaborInput(
+                    workers: _workersVal,
+                    hours: _hoursVal,
+                    rate: _rateVal,
+                  ))
+              : null,
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
 }

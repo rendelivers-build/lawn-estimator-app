@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:lawn_estimator/models/models.dart';
+import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -19,7 +20,7 @@ import 'package:pdf/widgets.dart' as pw;
 /// simply omitted.
 Future<Uint8List> buildEstimatePdf(
   EstimateFull full, {
-  String businessName = 'Your Lawn Care Co.',
+  CompanyProfile? company,
 }) async {
   final estimate = full.estimate;
   final photo = _loadPhotoImage(estimate.photoPath);
@@ -30,14 +31,12 @@ Future<Uint8List> buildEstimatePdf(
     pw.MultiPage(
       pageFormat: PdfPageFormat.letter,
       margin: const pw.EdgeInsets.all(36),
-      header: (_) => _buildHeader(businessName, estimate, photo),
+      header: (_) => _buildHeader(company, estimate, photo),
       footer: (context) => _buildFooter(context),
       build: (_) => [
         _buildJobSection(estimate, full.zones.length),
         pw.SizedBox(height: 16),
         _buildLineItemsTable(full.lineItems, full.total),
-        pw.SizedBox(height: 8),
-        _buildRateNote(),
         pw.SizedBox(height: 16),
         _buildMaterialsBox(full.materials),
       ],
@@ -109,10 +108,25 @@ pw.MemoryImage? _loadPhotoImage(String? path) {
 // ---------------------------------------------------------------------------
 
 pw.Widget _buildHeader(
-  String businessName,
+  CompanyProfile? company,
   Estimate estimate,
   pw.MemoryImage? photo,
 ) {
+  // Letterhead lines under the business name; empty fields are skipped.
+  final contactLines = <String>[];
+  final profile = company;
+  if (profile != null) {
+    if (profile.street.isNotEmpty) contactLines.add(profile.street);
+    if (profile.cityStateZip.isNotEmpty) {
+      contactLines.add(profile.cityStateZip);
+    }
+    if (profile.phone.isNotEmpty) contactLines.add(profile.phone);
+    if (profile.email.isNotEmpty) contactLines.add(profile.email);
+  }
+  final businessName = (profile?.businessName.isNotEmpty ?? false)
+      ? profile!.businessName
+      : 'Your Lawn Care Co.';
+
   return pw.Column(
     children: [
       pw.Row(
@@ -130,6 +144,16 @@ pw.Widget _buildHeader(
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
+                for (final line in contactLines) ...[
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    line,
+                    style: const pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
+                ],
                 pw.SizedBox(height: 4),
                 pw.Text(
                   'Lawn Care Estimate',
@@ -241,16 +265,14 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
     final item = items[i];
     final striped = i.isOdd;
     final bg = striped ? PdfColors.grey100 : null;
-    // A "*" flags reference-only area-default pricing (see note below table).
     // unitPrice is stored as a String; parse defensively for display.
     final unitPriceValue = double.tryParse(item.unitPrice) ?? 0;
-    final unitPrice =
-        '${_formatMoney(unitPriceValue)}${item.rateSource == 'area_default' ? ' *' : ''}';
+    final unitPrice = _formatMoney(unitPriceValue);
     rows.add(
       pw.TableRow(
         decoration: bg == null ? null : pw.BoxDecoration(color: bg),
         children: [
-          bodyCell(item.service),
+          bodyCell(serviceLabel(item.service)),
           bodyCell(_formatQty(item.quantity), right: true),
           bodyCell(item.unit),
           bodyCell(unitPrice, right: true),
@@ -298,13 +320,6 @@ pw.Widget _buildLineItemsTable(List<LineItem> items, num total) {
   );
 }
 
-pw.Widget _buildRateNote() {
-  return pw.Text(
-    'Prices marked * use your area default rate (reference only); others use your set prices.',
-    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Materials reference box
 // ---------------------------------------------------------------------------
@@ -321,6 +336,7 @@ const Map<String, ({String label, String unit})> _materialLabels = {
   'topsoil': (label: 'Topsoil', unit: 'cu yd'),
   'herbicide': (label: 'Herbicide', unit: 'gal'),
   'weed_control': (label: 'Weed control', unit: 'lb'),
+  'weed_feed': (label: 'Weed & feed', unit: 'bags'),
 };
 
 String _materialLine(MaterialEstimate material) {
@@ -328,9 +344,9 @@ String _materialLine(MaterialEstimate material) {
   final label = known?.label ?? _fallbackLabel(material.materialType);
   final unit = known?.unit ?? '';
   final qty = unit.isEmpty
-      ? material.exactQuantity.toStringAsFixed(1)
-      : '${material.exactQuantity.toStringAsFixed(1)} $unit';
-  return '$label: $qty exact, buy ${material.purchaseUnits}';
+      ? _formatQty(material.exactQuantity)
+      : '${_formatQty(material.exactQuantity)} $unit';
+  return '$label: $qty exact, buy ${_formatQty(material.purchaseUnits)}';
 }
 
 String _fallbackLabel(String raw) {
@@ -363,7 +379,7 @@ pw.Widget _buildMaterialsBox(List<MaterialEstimate> materials) {
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text('•  ', style: const pw.TextStyle(fontSize: 11)),
+                pw.Text('-  ', style: const pw.TextStyle(fontSize: 11)),
                 pw.Expanded(
                   child: pw.Text(
                     _materialLine(material),

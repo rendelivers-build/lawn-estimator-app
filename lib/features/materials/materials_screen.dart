@@ -314,7 +314,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
         title: Text(serviceLabel(id)),
-        subtitle: Text(calc.error ?? 'Buy (rounded up): ${calc.buyText}'),
+        subtitle: Text(calc.error ?? 'Buy: ${calc.buyText}'),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -357,7 +357,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
                 else ...[
                   _ResultRow(label: 'Exact need', value: calc.exactText),
                   const SizedBox(height: 4),
-                  _ResultRow(label: 'Buy (rounded up)', value: calc.buyText),
+                  _ResultRow(label: 'Buy', value: calc.buyText),
                 ],
                 SwitchListTile(
                   title: const Text('Add to estimate'),
@@ -394,7 +394,6 @@ class _NumberField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        isDense: true,
       ),
       onChanged: onChanged,
     );

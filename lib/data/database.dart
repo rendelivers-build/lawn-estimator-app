@@ -28,7 +28,7 @@ class AppDatabase {
     final path = p.join(dir, 'lawn_estimator.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -138,6 +138,21 @@ class AppDatabase {
         updated_at TEXT NOT NULL
       )
     ''');
+
+    // Owner's company identity for estimate letterheads (single row, id=1).
+    await db.execute('''
+      CREATE TABLE company_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        business_name TEXT NOT NULL DEFAULT '',
+        street TEXT NOT NULL DEFAULT '',
+        city TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT '',
+        zip TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL DEFAULT '',
+        labor_rate REAL NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(
@@ -145,11 +160,21 @@ class AppDatabase {
     int oldVersion,
     int newVersion,
   ) async {
-    // v1 -> v2: no schema changes yet. Placeholder so future migrations
-    // have a home; keep the switch structure as versions are added.
-    // ignore: no-op placeholder
+    // v1 -> v2: company_profile table for estimate letterheads.
     if (oldVersion < 2 && newVersion >= 2) {
-      // No-op: reserved for future v2 migration.
+      await db.execute('''
+        CREATE TABLE company_profile (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          business_name TEXT NOT NULL DEFAULT '',
+          street TEXT NOT NULL DEFAULT '',
+          city TEXT NOT NULL DEFAULT '',
+          state TEXT NOT NULL DEFAULT '',
+          zip TEXT NOT NULL DEFAULT '',
+          phone TEXT NOT NULL DEFAULT '',
+          email TEXT NOT NULL DEFAULT '',
+          labor_rate REAL NOT NULL DEFAULT 0
+        )
+      ''');
     }
   }
 }

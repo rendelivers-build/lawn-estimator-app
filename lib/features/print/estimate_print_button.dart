@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/print/estimate_pdf.dart';
 import 'package:lawn_estimator/models/models.dart';
 import 'package:printing/printing.dart';
@@ -47,7 +48,8 @@ class EstimatePrintButton extends StatelessWidget {
 
     var failed = false;
     try {
-      final bytes = await buildEstimatePdf(estimate);
+      final company = await EstimateRepository().loadCompanyProfile();
+      final bytes = await buildEstimatePdf(estimate, company: company);
       final rawId = estimate.estimate.id.toString();
       final shortId = rawId.length > 8 ? rawId.substring(0, 8) : rawId;
       await Printing.sharePdf(

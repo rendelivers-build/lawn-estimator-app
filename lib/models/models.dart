@@ -534,3 +534,89 @@ class EstimateListItem {
 
   const EstimateListItem({required this.estimate, required this.total});
 }
+
+/// The owner's company identity, printed as the letterhead on estimates.
+///
+/// Single-row table (`company_profile`, id always 1). Empty fields are
+/// omitted from the PDF header.
+class CompanyProfile {
+  final String businessName;
+  final String street;
+  final String city;
+  final String state;
+  final String zip;
+  final String phone;
+  final String email;
+
+  /// Owner's labor rate in dollars per man-hour; prefilled when adding labor.
+  final double laborRate;
+
+  const CompanyProfile({
+    this.businessName = '',
+    this.street = '',
+    this.city = '',
+    this.state = '',
+    this.zip = '',
+    this.phone = '',
+    this.email = '',
+    this.laborRate = 0,
+  });
+
+  /// "City, ST 12345" — empty when no city/state/zip set.
+  String get cityStateZip {
+    final parts = <String>[
+      city,
+      [state, zip].where((s) => s.isNotEmpty).join(' '),
+    ].where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
+  CompanyProfile copyWith({
+    String? businessName,
+    String? street,
+    String? city,
+    String? state,
+    String? zip,
+    String? phone,
+    String? email,
+    double? laborRate,
+  }) {
+    return CompanyProfile(
+      businessName: businessName ?? this.businessName,
+      street: street ?? this.street,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      zip: zip ?? this.zip,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      laborRate: laborRate ?? this.laborRate,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': 1,
+      'business_name': businessName,
+      'street': street,
+      'city': city,
+      'state': state,
+      'zip': zip,
+      'phone': phone,
+      'email': email,
+      'labor_rate': laborRate,
+    };
+  }
+
+  factory CompanyProfile.fromMap(Map<String, dynamic> map) {
+    return CompanyProfile(
+      businessName: (map['business_name'] as String?) ?? '',
+      street: (map['street'] as String?) ?? '',
+      city: (map['city'] as String?) ?? '',
+      state: (map['state'] as String?) ?? '',
+      zip: (map['zip'] as String?) ?? '',
+      phone: (map['phone'] as String?) ?? '',
+      email: (map['email'] as String?) ?? '',
+      laborRate: (map['labor_rate'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}

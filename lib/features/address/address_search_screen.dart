@@ -70,6 +70,11 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
       });
       return;
     }
+    // Drop a stale error as soon as typing resumes — a failed keystroke's
+    // message must not linger on screen while the next search is in flight.
+    if (_error != null) {
+      setState(() => _error = null);
+    }
     _debounce =
         Timer(const Duration(milliseconds: 300), () => _search(trimmed));
   }
@@ -96,10 +101,13 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
         _loading = false;
       });
     } catch (e) {
+      // Technical details go to the debug log only — users just see the
+      // friendly message, never a raw PlatformException dump.
+      debugPrint('Address autocomplete failed: $e');
       if (!mounted || requestId != _requestId) return;
       setState(() {
         _loading = false;
-        _error = 'Search failed. Check your connection and try again.\n($e)';
+        _error = 'Search failed. Check your connection and try again.';
       });
     }
   }
@@ -143,7 +151,8 @@ class _AddressSearchScreenState extends ConsumerState<AddressSearchScreen> {
       if (!mounted) return;
       setState(() {
         _fetchingPlace = false;
-        _error = 'Could not load that address. Try again.\n($e)';
+        debugPrint('Place details failed: $e');
+        _error = 'Could not load that address. Try again.';
       });
     }
   }
