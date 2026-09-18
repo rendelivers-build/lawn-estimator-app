@@ -45,7 +45,8 @@ const _pages = [
     title: 'Pick materials',
     body: 'The app does the math for sod, seed, fertilizer, and weed & feed '
         'from your measured area. Open any material or service the first '
-        'time to learn what it is, why it matters, and how often it is done.',
+        'time to learn what it is, why it matters, and how often it is done. '
+        'Each explainer shows once — tap the (i) on any card to see it again.',
   ),
   _TutorialPage(
     icon: Icons.receipt_long_outlined,

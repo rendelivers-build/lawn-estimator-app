@@ -28,6 +28,12 @@ Future<bool> showServiceInfo(BuildContext context, String serviceId) async {
           ),
           const SizedBox(height: 4),
           Text(info.frequency),
+          const SizedBox(height: 12),
+          Text(
+            'This pops up the first time you open this card, then stays '
+            'off. Tap the (i) up top anytime to see it again.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
       actions: [
