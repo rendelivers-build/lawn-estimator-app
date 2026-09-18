@@ -1,5 +1,6 @@
 /// Materials screen: compute what to buy for each material and add the
-/// chosen ones to the estimate draft as line items.
+/// chosen ones to the estimate draft as line items. Mowing sits in the
+/// same list like any other trade, with its cut height documented.
 library;
 
 import 'package:flutter/material.dart';
@@ -124,6 +125,15 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
   final Map<String, TextEditingController> _wasteCtrls = {};
   final Map<String, bool> _added = {};
 
+  /// Mowing is priced like any other trade on this screen: a rate per
+  /// 1,000 ft² plus the cut height, which is documented on the estimate.
+  late final TextEditingController _mowRateCtrl;
+  late final TextEditingController _mowHeightCtrl;
+  bool _mowingAdded = false;
+
+  /// Minimum mowing job price (matches the summary screen's Add service).
+  static const double _mowMinimum = 35;
+
   @override
   void initState() {
     super.initState();
@@ -136,6 +146,14 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
           TextEditingController(text: _fmt(cfg.defaultWaste));
       _added[cfg.serviceId] = false;
     }
+    // Prefill the mowing rate from the pricing stack (owner price, area
+    // default, or beginner starter) so it never starts at $0.
+    final resolved = ref.read(pricingProvider.notifier).resolve(
+          'mowing',
+          mode: ref.read(appSettingsProvider).mode,
+        );
+    _mowRateCtrl = TextEditingController(text: _fmt(resolved.price));
+    _mowHeightCtrl = TextEditingController();
   }
 
   @override
@@ -144,6 +162,8 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       ..._rateCtrls.values,
       ..._packageCtrls.values,
       ..._wasteCtrls.values,
+      _mowRateCtrl,
+      _mowHeightCtrl,
     ]) {
       c.dispose();
     }
@@ -207,6 +227,12 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
     );
   }
 
+  /// Mowing total: rate × area, never below the minimum job price.
+  double _mowTotal(double rate, double areaFt2) {
+    final byRate = rate * areaFt2 / 1000;
+    return byRate < _mowMinimum ? _mowMinimum : byRate;
+  }
+
   /// Builds the material estimates + line items for every toggled-on
   /// material, stores them on the draft, and moves to the summary.
   Future<void> _continue() async {
@@ -257,6 +283,27 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       ));
     }
 
+    // Mowing is just another trade on this screen: rate × area, with the
+    // cut height documented in the line-item note for the estimate/PDF.
+    if (_mowingAdded) {
+      final resolved = ref
+          .read(pricingProvider.notifier)
+          .resolve('mowing', mode: ref.read(appSettingsProvider).mode);
+      final rate = _parse(_mowRateCtrl, resolved.price);
+      final total = _mowTotal(rate, areaFt2);
+      final height = _mowHeightCtrl.text.trim();
+      final heightNote = height.isEmpty ? '' : 'Mow height $height" - ';
+      items.add(LineItem.create(
+        estimateId: '',
+        service: 'mowing',
+        quantity: 1,
+        unit: 'job',
+        unitPrice: total.toStringAsFixed(2),
+        rateSource: resolved.source,
+        note: '$heightNote${formatFt2(areaFt2)} @ \$${_fmt(rate)}/1k ft²',
+      ));
+    }
+
     // setMaterials is synchronous, so state is updated before navigating
     // and the summary sees fresh state.
     ref.read(estimateDraftProvider.notifier).setMaterials(materials, items);
@@ -268,7 +315,8 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
   Widget build(BuildContext context) {
     final draft = ref.watch(estimateDraftProvider);
     final areaFt2 = draft.totalAreaFt2;
-    final anyAdded = _added.values.any((v) => v);
+    // Mowing counts too: a mow-only estimate is a valid estimate.
+    final anyAdded = _added.values.any((v) => v) || _mowingAdded;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Materials')),
@@ -312,6 +360,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
           ),
           const SizedBox(height: 12),
           for (final cfg in _materialConfigs) _materialCard(cfg, areaFt2),
+          _mowingCard(areaFt2),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -322,6 +371,70 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
             child: const Text('Continue'),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Mowing card: just another trade in the list. Rate per 1,000 ft² plus
+  /// the cut height, which lands on the estimate so it's documented.
+  Widget _mowingCard(double areaFt2) {
+    final resolved = ref.read(pricingProvider.notifier).resolve(
+          'mowing',
+          mode: ref.read(appSettingsProvider).mode,
+        );
+    final rate = _parse(_mowRateCtrl, resolved.price);
+    final total = _mowTotal(rate, areaFt2);
+    final height = _mowHeightCtrl.text.trim();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ExpansionTile(
+        title: Row(
+          children: [
+            const Expanded(child: Text('Mowing')),
+            ServiceInfoButton(serviceId: 'mowing'),
+          ],
+        ),
+        subtitle: Text(_mowingAdded
+            ? 'Mow${height.isEmpty ? '' : ' @ $height"'}: \$${total.toStringAsFixed(2)}'
+            : 'Rate + cut height'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _NumberField(
+                  controller: _mowRateCtrl,
+                  label: 'Rate (USD per 1,000 ft²)',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                _NumberField(
+                  controller: _mowHeightCtrl,
+                  label: 'Cut height (inches, e.g. 3.5)',
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Minimum job: \$${_fmt(_mowMinimum)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                _ResultRow(
+                  label: 'Estimated total',
+                  value: '\$${total.toStringAsFixed(2)}',
+                ),
+                SwitchListTile(
+                  title: const Text('Add to estimate'),
+                  value: _mowingAdded,
+                  onChanged: (v) => setState(() => _mowingAdded = v),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
