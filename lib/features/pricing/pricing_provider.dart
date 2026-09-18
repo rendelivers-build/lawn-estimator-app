@@ -17,9 +17,10 @@ import 'package:lawn_estimator/models/models.dart';
 /// [source] is one of:
 /// - `'owner'` — the owner set their own price;
 /// - `'area_default'` — the area default reference rate;
-/// - `'starter'` — the built-in beginner-mode starter price (used only
-///   when [mode] is Beginner and no owner or area-default price exists);
-/// - `'none'` — nothing set (expert mode with no owner price).
+/// - `'starter'` — the built-in generic reference price (used when no owner
+///   or area-default price exists, in both modes);
+/// - `'none'` — nothing set (no owner price and no reference price for
+///   the service id).
 class ResolvedRate {
   final double price;
   final String source;
@@ -55,20 +56,18 @@ class PricingNotifier extends StateNotifier<Map<String, PricingSettings>> {
   /// Resolves the effective price for [service].
   ///
   /// Owner price wins. Failing that, the area default. Failing that, the
-  /// built-in starter price when [mode] is Beginner — so a beginner never
-  /// faces a `$0` default. In Expert mode there is no starter fallback:
-  /// the owner is expected to enter every price themselves, so unset
-  /// pricing reports source `'none'` (and price 0.0).
+  /// built-in generic reference price — so a field never starts at `$0`
+  /// and the estimate math works off the measured area immediately. The
+  /// owner can still type over any prefilled rate.
   ResolvedRate resolve(String service, {String mode = 'beginner'}) {
     final settings = state[service];
     final owner = settings?.ownerPrice;
     if (owner != null) return ResolvedRate(owner, 'owner');
     final areaDefault = settings?.areaDefaultPrice;
     if (areaDefault != null) return ResolvedRate(areaDefault, 'area_default');
-    if (mode == 'expert') return const ResolvedRate(0.0, 'none');
     final starter = kStarterPrices[service];
     if (starter != null) return ResolvedRate(starter, 'starter');
-    return const ResolvedRate(0.0, 'area_default');
+    return const ResolvedRate(0.0, 'none');
   }
 
   /// Sets (or clears, with null) the owner's own price for [service].

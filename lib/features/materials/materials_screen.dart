@@ -638,14 +638,24 @@ class _NumberField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      onChanged: onChanged,
+    // The label sits above the field as plain text instead of a floating
+    // label: floating labels get sliced by the outline border on some
+    // devices when the field sits near the top of its card.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: controller,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+          ),
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }

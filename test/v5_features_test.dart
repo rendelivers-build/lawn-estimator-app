@@ -60,11 +60,11 @@ void main() {
       }
     });
 
-    test('expert has no starter fallback', () {
+    test('expert falls back to the generic reference rate too', () {
       final n = notifier();
       final r = n.resolve('mowing', mode: 'expert');
-      expect(r.source, 'none');
-      expect(r.price, 0.0);
+      expect(r.source, 'starter');
+      expect(r.price > 0, isTrue);
     });
 
     test('owner price still wins in both modes', () {
