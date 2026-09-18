@@ -4,6 +4,7 @@ import 'package:lawn_estimator/features/pricing/pricing_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 void main() {
+  _markupTests();
   group('pricing catalog (v5)', () {
     test('every service has a blurb and frequency', () {
       for (final s in kPricingServices) {
@@ -104,6 +105,23 @@ void main() {
       final back = Estimate.fromMap(e.toMap());
       expect(back.internalNote, 'crew: gate code 1234');
       expect(back.displayNote, 'Spring cleanup included');
+    });
+  });
+}
+
+void _markupTests() {
+  group('materials markup', () {
+    test('applyMarkup scales the price', () {
+      expect(applyMarkup(10, 20), closeTo(12, 0.001));
+      expect(applyMarkup(26, 0), closeTo(26, 0.001));
+      expect(applyMarkup(0.65, 30), closeTo(0.845, 0.001));
+    });
+
+    test('AppSettings defaults to zero markup and copyWith keeps it', () {
+      const s = AppSettings();
+      expect(s.materialsMarkup, 0);
+      expect(s.copyWith(materialsMarkup: 20).materialsMarkup, 20);
+      expect(s.copyWith(mode: AppSettings.modeExpert).materialsMarkup, 0);
     });
   });
 }

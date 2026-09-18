@@ -303,6 +303,12 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       final resolved = ref
           .read(pricingProvider.notifier)
           .resolve(cfg.serviceId, mode: ref.read(appSettingsProvider).mode);
+      // Expert materials markup rides on top of the resolved price, so a
+      // $26 bag with 20% markup bills at $31.20 on the estimate.
+      final marked = applyMarkup(
+        resolved.price,
+        ref.read(appSettingsProvider).materialsMarkup,
+      );
 
       materials.add(MaterialEstimate.create(
         // The repository assigns the real estimate id on save; keep the
@@ -329,7 +335,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
         service: cfg.serviceId,
         quantity: quantity,
         unit: unitLabel,
-        unitPrice: _fmt(resolved.price),
+        unitPrice: _fmt(marked),
         rateSource: resolved.source,
       ));
     }

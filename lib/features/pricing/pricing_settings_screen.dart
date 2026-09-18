@@ -114,6 +114,8 @@ class PricingSettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
+          if (expert) const _MarkupCard(),
+          if (expert) const SizedBox(height: 12),
           for (final service in kPricingServices)
             _ServicePriceRow(
               service: service,
@@ -330,12 +332,115 @@ class _BagPriceHelperState extends ConsumerState<_BagPriceHelper> {
   }
 }
 
+/// Materials markup card (expert mode only).
+///
+/// Quick-pick chips for the common markups plus a custom percent field.
+/// The chosen percent is applied automatically to every material line on
+/// the estimate — the owner sets it once here instead of padding each
+/// bag price by hand.
+class _MarkupCard extends ConsumerWidget {
+  const _MarkupCard();
+
+  static const _presets = [0.0, 10.0, 20.0, 30.0];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final markup = ref.watch(appSettingsProvider).materialsMarkup;
+    final notifier = ref.read(appSettingsProvider.notifier);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Materials markup',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Added on top of your material costs — applied automatically '
+              'to every material on the estimate. It covers getting the '
+              'product to the job: pickup time, fuel, and everything else.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final preset in _presets)
+                  ChoiceChip(
+                    label: Text(
+                        preset == 0 ? 'None' : '${preset.toInt()}%'),
+                    selected: markup == preset,
+                    onSelected: (_) =>
+                        notifier.setMaterialsMarkup(preset),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _PercentField(
+              key: ValueKey('markup_$markup'),
+              initialValue: _presets.contains(markup) ? null : markup,
+              onSubmitted: notifier.setMaterialsMarkup,
+            ),
+            if (markup > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'A \$10 bag bills at '
+                '\$${applyMarkup(10, markup).toStringAsFixed(2)}.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Percent field that reports a parsed value on submit.
+///
+/// Empty submits 0 (clears the markup); unparseable input is ignored.
+class _PercentField extends StatelessWidget {
+  final double? initialValue;
+  final void Function(double percent) onSubmitted;
+
+  const _PercentField({
+    super.key,
+    required this.initialValue,
+    required this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      initialValue: initialValue?.toString() ?? '',
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: const InputDecoration(
+        labelText: 'Custom %',
+        suffixText: '%',
+        border: OutlineInputBorder(),
+      ),
+      onFieldSubmitted: (value) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          onSubmitted(0);
+          return;
+        }
+        final parsed = double.tryParse(trimmed);
+        if (parsed != null) onSubmitted(parsed);
+      },
+    );
+  }
+}
+
 /// Numeric price field that reports a parsed value on submit.
 ///
 /// An empty field submits null (clears the price); unparseable input is
 /// ignored so a typo can never wipe a saved price.
-class _PriceField extends StatelessWidget {
-  final String label;
+class _PriceField extends StatelessWidget {  final String label;
   final double? initialValue;
   final void Function(double? price) onSubmitted;
 

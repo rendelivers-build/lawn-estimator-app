@@ -661,10 +661,15 @@ class AppSettings {
   /// beginner mode (so each explanation appears once, not every visit).
   final Set<String> infoSeenIds;
 
+  /// Materials markup percent (expert mode). Added on top of the resolved
+  /// material price for every material line on the estimate.
+  final double materialsMarkup;
+
   const AppSettings({
     this.mode = modeBeginner,
     this.tutorialSeen = false,
     this.infoSeenIds = const {},
+    this.materialsMarkup = 0,
   });
 
   bool get isExpert => mode == modeExpert;
@@ -673,11 +678,13 @@ class AppSettings {
     String? mode,
     bool? tutorialSeen,
     Set<String>? infoSeenIds,
+    double? materialsMarkup,
   }) {
     return AppSettings(
       mode: mode ?? this.mode,
       tutorialSeen: tutorialSeen ?? this.tutorialSeen,
       infoSeenIds: infoSeenIds ?? this.infoSeenIds,
+      materialsMarkup: materialsMarkup ?? this.materialsMarkup,
     );
   }
 }

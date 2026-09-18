@@ -12,6 +12,7 @@ import 'package:lawn_estimator/models/models.dart';
 const _kModeKey = 'mode';
 const _kTutorialSeenKey = 'tutorial_seen';
 const _kInfoSeenKey = 'info_seen_ids';
+const _kMarkupKey = 'materials_markup';
 
 /// Notifier for app-level settings.
 class AppSettingsNotifier extends StateNotifier<AppSettings> {
@@ -37,12 +38,15 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toSet();
+    final markup =
+        double.tryParse(stored[_kMarkupKey] ?? '') ?? 0;
     state = AppSettings(
       mode: mode == AppSettings.modeExpert
           ? AppSettings.modeExpert
           : AppSettings.modeBeginner,
       tutorialSeen: tutorialSeen,
       infoSeenIds: infoSeenIds,
+      materialsMarkup: markup,
     );
   }
 
@@ -68,6 +72,15 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     final repo = EstimateRepository();
     await repo.saveAppSetting(_kInfoSeenKey, updated.join(','));
     state = state.copyWith(infoSeenIds: updated);
+  }
+
+  /// Sets the materials markup percent (expert mode) and persists it.
+  /// Clamped to 0–1000 to keep typos from producing absurd prices.
+  Future<void> setMaterialsMarkup(double percent) async {
+    final clamped = percent.clamp(0, 1000).toDouble();
+    final repo = EstimateRepository();
+    await repo.saveAppSetting(_kMarkupKey, clamped.toString());
+    state = state.copyWith(materialsMarkup: clamped);
   }
 }
 

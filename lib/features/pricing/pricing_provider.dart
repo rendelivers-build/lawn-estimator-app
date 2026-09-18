@@ -28,6 +28,11 @@ class ResolvedRate {
   const ResolvedRate(this.price, this.source);
 }
 
+/// Applies a markup percent to a price: 20% on $10 → $12.
+/// A 0% markup returns the price unchanged.
+double applyMarkup(double price, double markupPercent) =>
+    price * (1 + markupPercent / 100);
+
 /// Holds the pricing settings map keyed by service id.
 class PricingNotifier extends StateNotifier<Map<String, PricingSettings>> {
   PricingNotifier() : super({});
