@@ -28,9 +28,9 @@ jobs:
 
 
       - name: Build release APK
-  env:
-    MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
-  run: flutter build apk --release --dart-define=MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: flutter build apk --release --dart-define=MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}
 
 
 
