@@ -29,6 +29,7 @@ class EstimateDraft {
     this.confirmed = false,
     this.materials = const [],
     this.lineItems = const [],
+    this.resumeRoute,
   });
 
   /// Human-readable address chosen on the search screen.
@@ -66,6 +67,11 @@ class EstimateDraft {
   final List<MaterialEstimate> materials;
   final List<LineItem> lineItems;
 
+  /// Flow screen the user was on when the draft was last saved
+  /// ('/measure', '/confirm', '/materials', '/summary'), so resume drops
+  /// them back exactly where the interruption happened.
+  final String? resumeRoute;
+
   /// Vertices of the active zone (empty list if the index is out of range).
   List<LatLng> get activeZonePoints =>
       (activeZone >= 0 && activeZone < zones.length)
@@ -89,6 +95,81 @@ class EstimateDraft {
   /// True when at least one zone has enough vertices to form a polygon.
   bool get canContinue => zones.any((zone) => zone.length >= 3);
 
+  /// True when the draft holds anything worth resuming after an
+  /// interruption (a phone call, backing out, the app being killed).
+  bool get hasContent =>
+      (addressLabel?.trim().isNotEmpty ?? false) ||
+      zones.any((zone) => zone.isNotEmpty) ||
+      photoPath != null ||
+      lineItems.isNotEmpty;
+
+  /// Serializes the draft to a JSON-safe map for auto-save.
+  Map<String, dynamic> toMap() {
+    return {
+      'addressLabel': addressLabel,
+      'placeId': placeId,
+      'centerLat': centerLat,
+      'centerLng': centerLng,
+      'zones': [
+        for (final zone in zones)
+          [
+            for (final p in zone) {'lat': p.latitude, 'lng': p.longitude}
+          ],
+      ],
+      'activeZone': activeZone,
+      'photoPath': photoPath,
+      'note': note,
+      'internalNote': internalNote,
+      'displayNote': displayNote,
+      'confirmed': confirmed,
+      'materials': [for (final m in materials) m.toMap()],
+      'lineItems': [for (final i in lineItems) i.toMap()],
+      'resumeRoute': resumeRoute,
+    };
+  }
+
+  /// Restores a draft written by [toMap]; null when the payload is empty
+  /// or unusable.
+  static EstimateDraft? fromMap(Map<String, dynamic> map) {
+    try {
+      final zonesRaw = map['zones'] as List? ?? const [];
+      final zones = <List<LatLng>>[
+        for (final zoneRaw in zonesRaw)
+          <LatLng>[
+            for (final p in (zoneRaw as List? ?? const []))
+              LatLng(
+                (p['lat'] as num).toDouble(),
+                (p['lng'] as num).toDouble(),
+              ),
+          ],
+      ];
+      return EstimateDraft(
+        addressLabel: map['addressLabel'] as String?,
+        placeId: map['placeId'] as String?,
+        centerLat: (map['centerLat'] as num?)?.toDouble(),
+        centerLng: (map['centerLng'] as num?)?.toDouble(),
+        zones: zones.isEmpty ? const [[]] : zones,
+        activeZone: (map['activeZone'] as num?)?.toInt() ?? 0,
+        photoPath: map['photoPath'] as String?,
+        note: map['note'] as String?,
+        internalNote: map['internalNote'] as String?,
+        displayNote: map['displayNote'] as String?,
+        confirmed: map['confirmed'] as bool? ?? false,
+        materials: [
+          for (final m in (map['materials'] as List? ?? const []))
+            MaterialEstimate.fromMap(Map<String, dynamic>.from(m as Map)),
+        ],
+        lineItems: [
+          for (final i in (map['lineItems'] as List? ?? const []))
+            LineItem.fromMap(Map<String, dynamic>.from(i as Map)),
+        ],
+        resumeRoute: map['resumeRoute'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   EstimateDraft copyWith({
     String? addressLabel,
     String? placeId,
@@ -107,6 +188,7 @@ class EstimateDraft {
     bool? confirmed,
     List<MaterialEstimate>? materials,
     List<LineItem>? lineItems,
+    String? resumeRoute,
   }) {
     return EstimateDraft(
       addressLabel: addressLabel ?? this.addressLabel,
@@ -124,6 +206,7 @@ class EstimateDraft {
       confirmed: confirmed ?? this.confirmed,
       materials: materials ?? this.materials,
       lineItems: lineItems ?? this.lineItems,
+      resumeRoute: resumeRoute ?? this.resumeRoute,
     );
   }
 }
@@ -249,6 +332,19 @@ class EstimateDraftNotifier extends StateNotifier<EstimateDraft> {
       materials: [...materials],
       lineItems: [...lineItems],
     );
+  }
+
+  /// Replaces the draft with a previously auto-saved one (resume flow).
+  void restore(EstimateDraft draft) {
+    state = draft;
+  }
+
+  /// Records which flow screen the user is on, so an interrupted estimate
+  /// resumes on that exact screen instead of always restarting at /measure.
+  void setResumeRoute(String route) {
+    if (state.resumeRoute != route) {
+      state = state.copyWith(resumeRoute: route);
+    }
   }
 
   /// Discards the draft entirely.

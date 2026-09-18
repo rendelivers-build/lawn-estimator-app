@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
+import 'package:lawn_estimator/features/measure/draft_autosave.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
 import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
@@ -39,6 +40,47 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
     // "Don't show this again" choice is respected.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(appSettingsProvider.notifier).ensureLoaded();
+      if (!mounted) return;
+      // Resume an interrupted estimate before anything else: a phone call
+      // or backing out mid-flow must not lose the user's work.
+      final saved = await loadDraft();
+      if (mounted &&
+          saved != null &&
+          !ref.read(estimateDraftProvider).hasContent) {
+        final resume = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Resume estimate?'),
+            content: Text(
+              'You have an unfinished estimate'
+              '${saved.addressLabel != null ? ' for ${saved.addressLabel}' : ''}. '
+              'Pick up where you left off?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Discard'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Resume'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (resume == true) {
+          ref.read(estimateDraftProvider.notifier).restore(saved);
+          // Drop the user back on the exact screen they were on when
+          // interrupted; fall back to /measure for anything unexpected.
+          const flowRoutes = {'/measure', '/confirm', '/materials', '/summary'};
+          final route = saved.resumeRoute;
+          Navigator.of(context)
+              .pushNamed(flowRoutes.contains(route) ? route! : '/measure');
+          return;
+        }
+        await clearDraft();
+      }
       if (!mounted) return;
       if (!ref.read(appSettingsProvider).tutorialSeen) {
         Navigator.of(context).pushNamed('/tutorial');

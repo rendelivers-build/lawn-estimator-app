@@ -8,9 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lawn_estimator/core/pricing_catalog.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
+import 'package:lawn_estimator/features/measure/draft_autosave.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
-import 'package:lawn_estimator/features/pricing/pricing_provider.dart';
-import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// Shows the draft's line items with editable quantities and unit prices.
@@ -43,6 +42,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   @override
   void initState() {
     super.initState();
+    ref.read(estimateDraftProvider.notifier).setResumeRoute('/summary');
     final draft = ref.read(estimateDraftProvider);
     _items = List<LineItem>.from(draft.lineItems);
     _internalNoteCtrl = TextEditingController(text: draft.internalNote ?? '');
@@ -106,40 +106,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     });
   }
 
-  /// Opens the service picker sheet: mowing for everyone, plus the
-  /// expert-only services (aeration, dethatch, top dress, moss/mold).
-  Future<void> _addService() async {
-    final mode = ref.read(appSettingsProvider).mode;
-    final areaFt2 = ref.read(estimateDraftProvider).totalAreaFt2;
-    final picked = await showModalBottomSheet<_ServiceChoice>(
-      context: context,
-      builder: (context) => _ServicePickerSheet(
-        expert: mode == 'expert',
-        areaFt2: areaFt2,
-      ),
-    );
-    if (picked == null || !mounted) return;
-    final result = await showDialog<_ServiceInput>(
-      context: context,
-      builder: (_) => _ServiceDialog(
-        familyId: picked.id,
-        areaFt2: areaFt2,
-      ),
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      _items.add(LineItem.create(
-        estimateId: '',
-        service: result.serviceId,
-        quantity: 1,
-        unit: 'job',
-        unitPrice: result.total.toStringAsFixed(2),
-        rateSource: result.rateSource,
-        note: result.note,
-      ));
-    });
-  }
-
   /// Saves the draft (with any edited items), resets the draft, and
   /// returns to the home screen.
   Future<void> _saveEstimate() async {
@@ -158,6 +124,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       notifier.setDisplayNote(displayNote.isEmpty ? null : displayNote);
 
       await EstimateRepository().saveDraft(ref.read(estimateDraftProvider));
+      // The estimate is saved: drop the auto-save so it doesn't prompt
+      // a resume next launch.
+      await clearDraft();
       // Flag BEFORE reset: the reset zeroes the draft area and would
       // otherwise trip the no-area guard's post-frame pop after navigation.
       if (mounted) setState(() => _saved = true);
@@ -245,14 +214,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   onPressed: _addLabor,
                   icon: const Icon(Icons.add),
                   label: const Text('Add labor'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _addService,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add service'),
                 ),
               ),
             ],
@@ -611,311 +572,3 @@ class _LaborDialogState extends State<_LaborDialog> {
   }
 }
 
-/// One pickable entry in the "Add service" sheet.
-///
-/// [id] is a concrete catalog service id, except `'moss_mold'`, which
-/// expands to the spray/granular choice inside the service dialog.
-class _ServiceChoice {
-  final String id;
-  final String label;
-  final IconData icon;
-  final String? infoServiceId;
-
-  const _ServiceChoice({
-    required this.id,
-    required this.label,
-    required this.icon,
-    this.infoServiceId,
-  });
-}
-
-/// Bottom sheet listing the addable services: mowing for everyone, plus
-/// the expert-only services (aeration, dethatch, top dress, moss/mold).
-class _ServicePickerSheet extends StatelessWidget {
-  final bool expert;
-  final double areaFt2;
-
-  const _ServicePickerSheet({required this.expert, required this.areaFt2});
-
-  @override
-  Widget build(BuildContext context) {
-    final choices = <_ServiceChoice>[
-      const _ServiceChoice(
-        id: 'mowing',
-        label: 'Mowing',
-        icon: Icons.grass,
-        infoServiceId: 'mowing',
-      ),
-      if (expert) ...[
-        const _ServiceChoice(
-          id: 'aerate',
-          label: 'Aeration',
-          icon: Icons.air,
-          infoServiceId: 'aerate',
-        ),
-        const _ServiceChoice(
-          id: 'dethatch',
-          label: 'Dethatch',
-          icon: Icons.layers_clear,
-          infoServiceId: 'dethatch',
-        ),
-        const _ServiceChoice(
-          id: 'top_dress',
-          label: 'Top dress',
-          icon: Icons.layers,
-          infoServiceId: 'top_dress',
-        ),
-        const _ServiceChoice(
-          id: 'moss_mold',
-          label: 'Moss / mold control',
-          icon: Icons.biotech,
-        ),
-      ],
-    ];
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, 4),
-            child: Text(
-              'Add service',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              'Priced on your measured ${formatFt2(areaFt2)}.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: choices.length,
-              itemBuilder: (context, index) {
-                final choice = choices[index];
-                return ListTile(
-                  leading: Icon(choice.icon),
-                  title: Text(choice.label),
-                  subtitle: choice.id == 'moss_mold'
-                      ? const Text('Spray or granular')
-                      : null,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.info_outline),
-                    tooltip: 'About ${choice.label}',
-                    onPressed: () => _showChoiceInfo(context, choice),
-                  ),
-                  onTap: () => Navigator.of(context).pop(choice),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showChoiceInfo(BuildContext context, _ServiceChoice choice) {
-    final info = choice.infoServiceId != null
-        ? serviceInfo(choice.infoServiceId!)
-        : null;
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(choice.label),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(info?.blurb ??
-                'Treatment for moss and mold patches — as a liquid spray or a granular (peat-style) spread.'),
-            const SizedBox(height: 12),
-            Text(
-              'How often',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(info?.frequency ??
-                'Apply when you see it; re-check shady, damp areas.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Rate + total collected by [_ServiceDialog].
-class _ServiceInput {
-  final String serviceId;
-  final double total;
-  final String rateSource;
-  final String note;
-
-  const _ServiceInput({
-    required this.serviceId,
-    required this.total,
-    required this.rateSource,
-    required this.note,
-  });
-}
-
-/// Dialog for adding a job service: rate per 1,000 ft² against the measured
-/// area, with a minimum job price per service.
-///
-/// [familyId] is a catalog service id, or `'moss_mold'` for the
-/// spray/granular choice.
-class _ServiceDialog extends ConsumerStatefulWidget {
-  final String familyId;
-  final double areaFt2;
-
-  const _ServiceDialog({required this.familyId, required this.areaFt2});
-
-  @override
-  ConsumerState<_ServiceDialog> createState() => _ServiceDialogState();
-}
-
-class _ServiceDialogState extends ConsumerState<_ServiceDialog> {
-  /// Minimum job price per service family.
-  static const Map<String, double> _minimums = {
-    'mowing': 35,
-    'aerate': 75,
-    'dethatch': 75,
-    'top_dress': 100,
-    'moss_mold': 50,
-  };
-
-  late final TextEditingController _rate;
-  bool _granular = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Prefill with whatever the pricing stack resolves (owner price,
-    // area default, or beginner starter price) so a beginner never
-    // starts from $0.
-    _rate = TextEditingController(text: _trim(_resolved.price));
-  }
-
-  @override
-  void dispose() {
-    _rate.dispose();
-    super.dispose();
-  }
-
-  /// Concrete catalog id: the family id, or the moss/mold method choice.
-  String get _serviceId => widget.familyId == 'moss_mold'
-      ? (_granular ? 'moss_mold_granular' : 'moss_mold_spray')
-      : widget.familyId;
-
-  ResolvedRate get _resolved => ref.read(pricingProvider.notifier).resolve(
-        _serviceId,
-        mode: ref.read(appSettingsProvider).mode,
-      );
-
-  double get _rateVal => double.tryParse(_rate.text.trim()) ?? 0;
-  double get _minimum => _minimums[widget.familyId] ?? 0;
-
-  /// Suggested total: rate × area, never below the service minimum.
-  double get _suggested {
-    final byRate = _rateVal * widget.areaFt2 / 1000;
-    return byRate < _minimum ? _minimum : byRate;
-  }
-
-  bool get _valid => _rateVal > 0;
-
-  static String _trim(double v) =>
-      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
-
-  @override
-  Widget build(BuildContext context) {
-    final isMoss = widget.familyId == 'moss_mold';
-    return AlertDialog(
-      title: Text(isMoss ? 'Moss / mold control' : serviceLabel(_serviceId)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isMoss) ...[
-              Center(
-                child: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                        value: false,
-                        label: Text('Spray'),
-                        icon: Icon(Icons.water_drop_outlined)),
-                    ButtonSegment(
-                        value: true,
-                        label: Text('Granular'),
-                        icon: Icon(Icons.grain)),
-                  ],
-                  selected: {_granular},
-                  onSelectionChanged: (selected) {
-                    setState(() {
-                      _granular = selected.first;
-                      // Re-prefill the rate for the newly chosen method.
-                      _rate.text = _trim(_resolved.price);
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            Text('Lawn area: ${formatFt2(widget.areaFt2)}'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _rate,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Rate (USD per 1,000 ft²)',
-                prefixText: '\$',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Minimum job: \$${_trim(_minimum)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _valid
-                  ? 'Suggested total: \$${_suggested.toStringAsFixed(2)}'
-                  : 'Enter a rate above \$0.',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _valid
-              ? () => Navigator.of(context).pop(_ServiceInput(
-                    serviceId: _serviceId,
-                    total: _suggested,
-                    rateSource: _resolved.source,
-                    note:
-                        '${formatFt2(widget.areaFt2)} @ \$${_trim(_rateVal)}/1k ft²',
-                  ))
-              : null,
-          child: const Text('Add'),
-        ),
-      ],
-    );
-  }
-}

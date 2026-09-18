@@ -657,17 +657,27 @@ class AppSettings {
   final String mode;
   final bool tutorialSeen;
 
+  /// Service/material ids whose explainer was already auto-shown in
+  /// beginner mode (so each explanation appears once, not every visit).
+  final Set<String> infoSeenIds;
+
   const AppSettings({
     this.mode = modeBeginner,
     this.tutorialSeen = false,
+    this.infoSeenIds = const {},
   });
 
   bool get isExpert => mode == modeExpert;
 
-  AppSettings copyWith({String? mode, bool? tutorialSeen}) {
+  AppSettings copyWith({
+    String? mode,
+    bool? tutorialSeen,
+    Set<String>? infoSeenIds,
+  }) {
     return AppSettings(
       mode: mode ?? this.mode,
       tutorialSeen: tutorialSeen ?? this.tutorialSeen,
+      infoSeenIds: infoSeenIds ?? this.infoSeenIds,
     );
   }
 }

@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lawn_estimator/features/measure/draft_autosave.dart';
+import 'package:lawn_estimator/features/measure/draft_provider.dart';
 import 'package:lawn_estimator/theme.dart';
 
 // Screen classes. Each is owned by its feature module; only the imports
@@ -15,11 +20,55 @@ import 'package:lawn_estimator/features/settings/company_profile_screen.dart';
 import 'package:lawn_estimator/features/settings/tutorial_screen.dart';
 
 /// Root widget of the Lawn Estimator app.
-class LawnEstimatorApp extends StatelessWidget {
+///
+/// Also owns draft auto-save: the in-progress estimate is persisted
+/// (debounced) on every change and immediately when the app is
+/// backgrounded, so an interruption never loses the user's work.
+class LawnEstimatorApp extends ConsumerStatefulWidget {
   const LawnEstimatorApp({super.key});
 
   @override
+  ConsumerState<LawnEstimatorApp> createState() => _LawnEstimatorAppState();
+}
+
+class _LawnEstimatorAppState extends ConsumerState<LawnEstimatorApp>
+    with WidgetsBindingObserver {
+  Timer? _saveDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveDebounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Phone call, home button, app switcher: persist immediately.
+    if (state == AppLifecycleState.paused) {
+      _saveDebounce?.cancel();
+      unawaited(saveDraft(ref.read(estimateDraftProvider)));
+    }
+  }
+
+  void _scheduleSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 800), () {
+      unawaited(saveDraft(ref.read(estimateDraftProvider)));
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Debounced persist on every draft mutation (vertex taps, photo,
+    // materials, notes, ...).
+    ref.listen<EstimateDraft>(estimateDraftProvider, (_, __) => _scheduleSave());
     return MaterialApp(
       title: 'Lawn Estimator',
       theme: AppTheme.light,

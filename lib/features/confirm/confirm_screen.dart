@@ -31,6 +31,7 @@ class _ConfirmScreenState extends ConsumerState<ConfirmScreen> {
   @override
   void initState() {
     super.initState();
+    ref.read(estimateDraftProvider.notifier).setResumeRoute('/confirm');
     _noteController.text = ref.read(estimateDraftProvider).note ?? '';
   }
 

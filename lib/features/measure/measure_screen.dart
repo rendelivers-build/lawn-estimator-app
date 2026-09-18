@@ -34,9 +34,14 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
   /// anchored at its center instead.
   BitmapDescriptor? _vertexIcon;
 
+  /// True = taps drop outline points; false = taps do nothing so pins can
+  /// be grabbed cleanly (long-press a pin, then drag, to move it).
+  bool _drawMode = true;
+
   @override
   void initState() {
     super.initState();
+    ref.read(estimateDraftProvider.notifier).setResumeRoute('/measure');
     _buildVertexIcon();
   }
 
@@ -136,8 +141,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
           polygons: _buildPolygons(draft),
           markers: _buildMarkers(draft, notifier),
           onMapCreated: (controller) => _mapController = controller,
-          // Draw mode is always on: a tap drops a vertex on the active zone.
-          onTap: notifier.addVertex,
+          // In Move mode taps do nothing, so grabbing a pin can't
+          // accidentally drop a stray vertex.
+          onTap: _drawMode ? notifier.addVertex : null,
         ),
         Positioned(
           top: 12,
@@ -277,24 +283,57 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
   Widget _buildControls(EstimateDraft draft, EstimateDraftNotifier notifier) {
     final hasVertices = draft.activeZonePoints.isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextButton.icon(
-            onPressed: hasVertices ? notifier.undoVertex : null,
-            icon: const Icon(Icons.undo),
-            label: const Text('Undo'),
+          Center(
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: true,
+                  label: Text('Draw'),
+                  icon: Icon(Icons.edit),
+                ),
+                ButtonSegment(
+                  value: false,
+                  label: Text('Move pins'),
+                  icon: Icon(Icons.pan_tool),
+                ),
+              ],
+              selected: {_drawMode},
+              onSelectionChanged: (s) =>
+                  setState(() => _drawMode = s.first),
+            ),
           ),
-          TextButton.icon(
-            onPressed: hasVertices ? notifier.clearActiveZone : null,
-            icon: const Icon(Icons.delete_sweep),
-            label: const Text('Clear zone'),
+          const SizedBox(height: 4),
+          Text(
+            _drawMode
+                ? 'Tap the map to drop outline points.'
+                : 'Long-press a pin, then drag to move it.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          TextButton.icon(
-            onPressed: notifier.addZone,
-            icon: const Icon(Icons.add),
-            label: const Text('Add zone'),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              TextButton.icon(
+                onPressed: hasVertices ? notifier.undoVertex : null,
+                icon: const Icon(Icons.undo),
+                label: const Text('Undo'),
+              ),
+              TextButton.icon(
+                onPressed: hasVertices ? notifier.clearActiveZone : null,
+                icon: const Icon(Icons.delete_sweep),
+                label: const Text('Clear zone'),
+              ),
+              TextButton.icon(
+                onPressed: notifier.addZone,
+                icon: const Icon(Icons.add),
+                label: const Text('Add zone'),
+              ),
+            ],
           ),
         ],
       ),

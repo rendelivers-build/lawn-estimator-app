@@ -30,8 +30,9 @@ const _pages = [
   _TutorialPage(
     icon: Icons.map_outlined,
     title: 'Outline the lawn',
-    body: 'Tap the satellite map to drop points around the lawn, then drag '
-        'any point to fine-tune the outline. The app measures the area live.',
+    body: 'In Draw mode, tap the satellite map to drop points around the '
+        'lawn. Switch to Move pins mode, then long-press any point to drag '
+        'it and fine-tune the outline. The app measures the area live.',
   ),
   _TutorialPage(
     icon: Icons.camera_alt_outlined,
@@ -43,7 +44,8 @@ const _pages = [
     icon: Icons.shopping_cart_outlined,
     title: 'Pick materials',
     body: 'The app does the math for sod, seed, fertilizer, and weed & feed '
-        'from your measured area. Tap any service name to learn what it is.',
+        'from your measured area. Open any material or service the first '
+        'time to learn what it is, why it matters, and how often it is done.',
   ),
   _TutorialPage(
     icon: Icons.receipt_long_outlined,

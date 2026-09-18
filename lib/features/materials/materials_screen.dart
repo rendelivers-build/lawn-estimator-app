@@ -119,24 +119,71 @@ class MaterialsScreen extends ConsumerStatefulWidget {
   ConsumerState<MaterialsScreen> createState() => _MaterialsScreenState();
 }
 
+/// A job service offered as a trade card on the Materials screen, priced
+/// per 1,000 ft² against the measured area with a minimum job price.
+class _ServiceDef {
+  final String id;
+  final String label;
+  final IconData icon;
+  final double minimum;
+  final bool expertOnly;
+
+  const _ServiceDef({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.minimum,
+    this.expertOnly = true,
+  });
+}
+
 class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
   final Map<String, TextEditingController> _rateCtrls = {};
   final Map<String, TextEditingController> _packageCtrls = {};
   final Map<String, TextEditingController> _wasteCtrls = {};
   final Map<String, bool> _added = {};
 
-  /// Mowing is priced like any other trade on this screen: a rate per
-  /// 1,000 ft² plus the cut height, which is documented on the estimate.
-  late final TextEditingController _mowRateCtrl;
-  late final TextEditingController _mowHeightCtrl;
-  bool _mowingAdded = false;
+  /// Every service is just another trade on this screen: mowing for
+  /// everyone, the rest expert-only (aeration, dethatch, top dress,
+  /// moss/mold).
+  static const _serviceDefs = [
+    _ServiceDef(
+      id: 'mowing',
+      label: 'Mowing',
+      icon: Icons.grass,
+      minimum: 35,
+      expertOnly: false,
+    ),
+    _ServiceDef(id: 'aerate', label: 'Aeration', icon: Icons.air, minimum: 75),
+    _ServiceDef(
+        id: 'dethatch', label: 'Dethatch', icon: Icons.layers_clear, minimum: 75),
+    _ServiceDef(
+        id: 'top_dress', label: 'Top dress', icon: Icons.layers, minimum: 100),
+    _ServiceDef(
+        id: 'moss_mold',
+        label: 'Moss / mold control',
+        icon: Icons.biotech,
+        minimum: 50),
+  ];
 
-  /// Minimum mowing job price (matches the summary screen's Add service).
-  static const double _mowMinimum = 35;
+  final Map<String, TextEditingController> _serviceRateCtrls = {};
+  final Map<String, bool> _serviceAdded = {};
+
+  /// Cut height for mowing, documented on the estimate line item.
+  late final TextEditingController _mowHeightCtrl;
+
+  /// Moss/mold method: false = spray, true = granular.
+  bool _mossGranular = false;
+
+  /// Concrete catalog id for a service family (moss/mold picks its method).
+  String _concreteServiceId(String familyId) => familyId == 'moss_mold'
+      ? (_mossGranular ? 'moss_mold_granular' : 'moss_mold_spray')
+      : familyId;
 
   @override
   void initState() {
     super.initState();
+    ref.read(estimateDraftProvider.notifier).setResumeRoute('/materials');
     for (final cfg in _materialConfigs) {
       _rateCtrls[cfg.serviceId] =
           TextEditingController(text: _fmt(cfg.defaultRate));
@@ -146,13 +193,17 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
           TextEditingController(text: _fmt(cfg.defaultWaste));
       _added[cfg.serviceId] = false;
     }
-    // Prefill the mowing rate from the pricing stack (owner price, area
+    // Prefill each service rate from the pricing stack (owner price, area
     // default, or beginner starter) so it never starts at $0.
-    final resolved = ref.read(pricingProvider.notifier).resolve(
-          'mowing',
-          mode: ref.read(appSettingsProvider).mode,
-        );
-    _mowRateCtrl = TextEditingController(text: _fmt(resolved.price));
+    final mode = ref.read(appSettingsProvider).mode;
+    for (final def in _serviceDefs) {
+      final resolved = ref
+          .read(pricingProvider.notifier)
+          .resolve(_concreteServiceId(def.id), mode: mode);
+      _serviceRateCtrls[def.id] =
+          TextEditingController(text: _fmt(resolved.price));
+      _serviceAdded[def.id] = false;
+    }
     _mowHeightCtrl = TextEditingController();
   }
 
@@ -162,7 +213,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       ..._rateCtrls.values,
       ..._packageCtrls.values,
       ..._wasteCtrls.values,
-      _mowRateCtrl,
+      ..._serviceRateCtrls.values,
       _mowHeightCtrl,
     ]) {
       c.dispose();
@@ -227,10 +278,10 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
     );
   }
 
-  /// Mowing total: rate × area, never below the minimum job price.
-  double _mowTotal(double rate, double areaFt2) {
+  /// Service total: rate × area, never below the service's minimum.
+  double _serviceTotal(double rate, double areaFt2, double minimum) {
     final byRate = rate * areaFt2 / 1000;
-    return byRate < _mowMinimum ? _mowMinimum : byRate;
+    return byRate < minimum ? minimum : byRate;
   }
 
   /// Builds the material estimates + line items for every toggled-on
@@ -283,24 +334,33 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       ));
     }
 
-    // Mowing is just another trade on this screen: rate × area, with the
-    // cut height documented in the line-item note for the estimate/PDF.
-    if (_mowingAdded) {
+    // Every added service is just another trade: rate × area with its
+    // minimum, and the cut height documented for mowing.
+    final mode = ref.read(appSettingsProvider).mode;
+    for (final def in _serviceDefs) {
+      if (!(_serviceAdded[def.id] ?? false)) continue;
+      if (def.expertOnly && mode != 'expert') continue;
+      final serviceId = _concreteServiceId(def.id);
       final resolved = ref
           .read(pricingProvider.notifier)
-          .resolve('mowing', mode: ref.read(appSettingsProvider).mode);
-      final rate = _parse(_mowRateCtrl, resolved.price);
-      final total = _mowTotal(rate, areaFt2);
-      final height = _mowHeightCtrl.text.trim();
-      final heightNote = height.isEmpty ? '' : 'Mow height $height" - ';
+          .resolve(serviceId, mode: mode);
+      final rate = _parse(_serviceRateCtrls[def.id]!, resolved.price);
+      final total = _serviceTotal(rate, areaFt2, def.minimum);
+      var note = '${formatFt2(areaFt2)} @ \$${_fmt(rate)}/1k ft²';
+      if (def.id == 'mowing') {
+        final height = _mowHeightCtrl.text.trim();
+        if (height.isNotEmpty) note = 'Mow height $height" - $note';
+      } else if (def.id == 'moss_mold') {
+        note = '${_mossGranular ? 'Granular' : 'Spray'} - $note';
+      }
       items.add(LineItem.create(
         estimateId: '',
-        service: 'mowing',
+        service: serviceId,
         quantity: 1,
         unit: 'job',
         unitPrice: total.toStringAsFixed(2),
         rateSource: resolved.source,
-        note: '$heightNote${formatFt2(areaFt2)} @ \$${_fmt(rate)}/1k ft²',
+        note: note,
       ));
     }
 
@@ -315,8 +375,9 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
   Widget build(BuildContext context) {
     final draft = ref.watch(estimateDraftProvider);
     final areaFt2 = draft.totalAreaFt2;
-    // Mowing counts too: a mow-only estimate is a valid estimate.
-    final anyAdded = _added.values.any((v) => v) || _mowingAdded;
+    // Services count too: a mow-only (or service-only) estimate is valid.
+    final anyAdded =
+        _added.values.any((v) => v) || _serviceAdded.values.any((v) => v);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Materials')),
@@ -360,7 +421,10 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
           ),
           const SizedBox(height: 12),
           for (final cfg in _materialConfigs) _materialCard(cfg, areaFt2),
-          _mowingCard(areaFt2),
+          for (final def in _serviceDefs)
+            if (!def.expertOnly ||
+                ref.watch(appSettingsProvider).mode == 'expert')
+              _serviceCard(def, areaFt2),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -375,49 +439,95 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
     );
   }
 
-  /// Mowing card: just another trade in the list. Rate per 1,000 ft² plus
-  /// the cut height, which lands on the estimate so it's documented.
-  Widget _mowingCard(double areaFt2) {
+  /// Beginner-mode guided tour: the first time a material/service card is
+  /// opened, pop its explainer (what it is, why, how often) — once ever.
+  /// Expert mode skips the hand-holding; the (i) button stays available.
+  void _maybeAutoExplain(String seenKey, String infoId, bool expanded) {
+    if (!expanded) return;
+    final settings = ref.read(appSettingsProvider);
+    if (settings.isExpert) return;
+    if (settings.infoSeenIds.contains(seenKey)) return;
+    // Mark first so a rebuild can't re-trigger it, then show.
+    ref.read(appSettingsProvider.notifier).markInfoSeen(seenKey);
+    showServiceInfo(context, infoId);
+  }
+
+  /// Service card: just another trade in the list. Rate per 1,000 ft² with
+  /// the service minimum, an Add to estimate toggle, and per-service
+  /// extras (cut height for mowing, spray/granular for moss/mold).
+  Widget _serviceCard(_ServiceDef def, double areaFt2) {
+    final serviceId = _concreteServiceId(def.id);
     final resolved = ref.read(pricingProvider.notifier).resolve(
-          'mowing',
+          serviceId,
           mode: ref.read(appSettingsProvider).mode,
         );
-    final rate = _parse(_mowRateCtrl, resolved.price);
-    final total = _mowTotal(rate, areaFt2);
-    final height = _mowHeightCtrl.text.trim();
+    final rate = _parse(_serviceRateCtrls[def.id]!, resolved.price);
+    final total = _serviceTotal(rate, areaFt2, def.minimum);
+    final added = _serviceAdded[def.id] ?? false;
+
+    String subtitle;
+    if (!added) {
+      subtitle = 'Rate per 1,000 ft²';
+    } else if (def.id == 'mowing') {
+      final height = _mowHeightCtrl.text.trim();
+      subtitle =
+          'Mow${height.isEmpty ? '' : ' @ $height"'}: \$${total.toStringAsFixed(2)}';
+    } else {
+      subtitle = '\$${total.toStringAsFixed(2)}';
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
+        leading: Icon(def.icon),
+        onExpansionChanged: (expanded) =>
+            _maybeAutoExplain(def.id, serviceId, expanded),
         title: Row(
           children: [
-            const Expanded(child: Text('Mowing')),
-            ServiceInfoButton(serviceId: 'mowing'),
+            Expanded(child: Text(def.label)),
+            ServiceInfoButton(serviceId: serviceId),
           ],
         ),
-        subtitle: Text(_mowingAdded
-            ? 'Mow${height.isEmpty ? '' : ' @ $height"'}: \$${total.toStringAsFixed(2)}'
-            : 'Rate + cut height'),
+        subtitle: Text(subtitle),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (def.id == 'moss_mold')
+                  SwitchListTile(
+                    title: const Text('Granular (off = spray)'),
+                    value: _mossGranular,
+                    onChanged: (v) {
+                      setState(() {
+                        _mossGranular = v;
+                        // Re-prefill the rate for the newly picked method.
+                        final r = ref
+                            .read(pricingProvider.notifier)
+                            .resolve(_concreteServiceId(def.id),
+                                mode: ref.read(appSettingsProvider).mode);
+                        _serviceRateCtrls[def.id]!.text = _fmt(r.price);
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 _NumberField(
-                  controller: _mowRateCtrl,
+                  controller: _serviceRateCtrls[def.id]!,
                   label: 'Rate (USD per 1,000 ft²)',
                   onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 12),
-                _NumberField(
-                  controller: _mowHeightCtrl,
-                  label: 'Cut height (inches, e.g. 3.5)',
-                  onChanged: (_) => setState(() {}),
-                ),
+                if (def.id == 'mowing') ...[
+                  const SizedBox(height: 12),
+                  _NumberField(
+                    controller: _mowHeightCtrl,
+                    label: 'Cut height (inches, e.g. 3.5)',
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text(
-                  'Minimum job: \$${_fmt(_mowMinimum)}',
+                  'Minimum job: \$${_fmt(def.minimum)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 4),
@@ -427,8 +537,9 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
                 ),
                 SwitchListTile(
                   title: const Text('Add to estimate'),
-                  value: _mowingAdded,
-                  onChanged: (v) => setState(() => _mowingAdded = v),
+                  value: added,
+                  onChanged: (v) =>
+                      setState(() => _serviceAdded[def.id] = v),
                   contentPadding: EdgeInsets.zero,
                 ),
               ],
@@ -446,6 +557,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
+        onExpansionChanged: (expanded) => _maybeAutoExplain(id, id, expanded),
         title: Row(
           children: [
             Expanded(child: Text(serviceLabel(id))),

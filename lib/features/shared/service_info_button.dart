@@ -9,6 +9,40 @@ import 'package:lawn_estimator/core/pricing_catalog.dart';
 
 /// Small (i) button; tapping it shows a dialog with the service's blurb
 /// and typical frequency.
+Future<bool> showServiceInfo(BuildContext context, String serviceId) async {
+  final info = serviceInfo(serviceId);
+  if (info == null) return false;
+  await showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(info.label),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(info.blurb),
+          const SizedBox(height: 12),
+          Text(
+            'How often',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 4),
+          Text(info.frequency),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
+  return true;
+}
+
+/// Small (i) button; tapping it shows a dialog with the service's blurb
+/// and typical frequency.
 class ServiceInfoButton extends StatelessWidget {
   final String serviceId;
 
@@ -22,36 +56,7 @@ class ServiceInfoButton extends StatelessWidget {
       icon: const Icon(Icons.info_outline, size: 20),
       tooltip: 'About ${info.label}',
       visualDensity: VisualDensity.compact,
-      onPressed: () => _showInfo(context, info),
-    );
-  }
-
-  void _showInfo(BuildContext context, PricingService info) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(info.label),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(info.blurb),
-            const SizedBox(height: 12),
-            Text(
-              'How often',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(info.frequency),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
+      onPressed: () => showServiceInfo(context, serviceId),
     );
   }
 }
