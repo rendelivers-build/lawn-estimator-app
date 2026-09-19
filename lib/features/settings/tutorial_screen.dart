@@ -30,9 +30,9 @@ const _pages = [
   _TutorialPage(
     icon: Icons.map_outlined,
     title: 'Outline the lawn',
-    body: 'In Draw mode, tap the satellite map to drop points around the '
-        'lawn. Switch to Move pins mode, then long-press any point to drag '
-        'it and fine-tune the outline. The app measures the area live.',
+    body: 'In "Draw" mode, tap the satellite map to drop points around the '
+        'lawn. In "Move pins" mode, hold a point and drag it to fine-tune '
+        'the outline. The app measures the area live.',
   ),
   _TutorialPage(
     icon: Icons.camera_alt_outlined,

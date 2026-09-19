@@ -30,6 +30,7 @@ class EstimateDraft {
     this.materials = const [],
     this.lineItems = const [],
     this.resumeRoute,
+    this.editingEstimateId,
   });
 
   /// Human-readable address chosen on the search screen.
@@ -71,6 +72,10 @@ class EstimateDraft {
   /// ('/measure', '/confirm', '/materials', '/summary'), so resume drops
   /// them back exactly where the interruption happened.
   final String? resumeRoute;
+
+  /// When set, the draft is an edit of an already-saved estimate: saving
+  /// replaces that estimate instead of creating a duplicate.
+  final String? editingEstimateId;
 
   /// Vertices of the active zone (empty list if the index is out of range).
   List<LatLng> get activeZonePoints =>
@@ -125,6 +130,7 @@ class EstimateDraft {
       'materials': [for (final m in materials) m.toMap()],
       'lineItems': [for (final i in lineItems) i.toMap()],
       'resumeRoute': resumeRoute,
+      'editingEstimateId': editingEstimateId,
     };
   }
 
@@ -164,6 +170,7 @@ class EstimateDraft {
             LineItem.fromMap(Map<String, dynamic>.from(i as Map)),
         ],
         resumeRoute: map['resumeRoute'] as String?,
+        editingEstimateId: map['editingEstimateId'] as String?,
       );
     } catch (_) {
       return null;
@@ -189,6 +196,8 @@ class EstimateDraft {
     List<MaterialEstimate>? materials,
     List<LineItem>? lineItems,
     String? resumeRoute,
+    String? editingEstimateId,
+    bool clearEditingId = false,
   }) {
     return EstimateDraft(
       addressLabel: addressLabel ?? this.addressLabel,
@@ -207,6 +216,8 @@ class EstimateDraft {
       materials: materials ?? this.materials,
       lineItems: lineItems ?? this.lineItems,
       resumeRoute: resumeRoute ?? this.resumeRoute,
+      editingEstimateId:
+          clearEditingId ? null : (editingEstimateId ?? this.editingEstimateId),
     );
   }
 }

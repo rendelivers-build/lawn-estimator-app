@@ -36,8 +36,13 @@ class EstimateRepository {
   /// Persists a finished [EstimateDraft] as a new estimate plus all of its
   /// zones, vertices, materials, and line items — atomically.
   ///
+  /// When [replaceId] is set, the previously saved estimate is deleted in
+  /// the same transaction first, so editing an estimate never leaves a
+  /// duplicate behind. The old photo file is kept when the draft still
+  /// references it.
+  ///
   /// Returns the new estimate's id.
-  Future<String> saveDraft(EstimateDraft draft) async {
+  Future<String> saveDraft(EstimateDraft draft, {String? replaceId}) async {
     final db = await _db();
     final now = DateTime.now();
     final estimateId = _uuid.v4();
@@ -67,7 +72,21 @@ class EstimateRepository {
       updatedAt: now,
     );
 
+    // Grab the replaced estimate's photo before its rows disappear, so a
+    // changed photo doesn't orphan the old file on disk.
+    String? oldPhotoPath;
+    if (replaceId != null) {
+      final oldRows = await db.query('estimates',
+          where: 'id = ?', whereArgs: [replaceId], limit: 1);
+      if (oldRows.isNotEmpty) {
+        oldPhotoPath = oldRows.first['photo_path'] as String?;
+      }
+    }
+
     await db.transaction((txn) async {
+      if (replaceId != null) {
+        await _deleteEstimateRows(txn, replaceId);
+      }
       await txn.insert('estimates', estimate.toMap());
 
       for (var z = 0; z < draft.zones.length; z++) {
@@ -116,6 +135,13 @@ class EstimateRepository {
         await txn.insert('line_items', row.toMap());
       }
     });
+
+    // Drop the replaced photo file when the draft no longer references it.
+    if (oldPhotoPath != null &&
+        oldPhotoPath.isNotEmpty &&
+        oldPhotoPath != draft.photoPath) {
+      await _deletePhotoFile(oldPhotoPath);
+    }
 
     return estimateId;
   }
@@ -191,6 +217,34 @@ class EstimateRepository {
     );
   }
 
+  /// Deletes every database row belonging to estimate [id].
+  /// Shared by [deleteEstimate] and the replace path of [saveDraft].
+  Future<void> _deleteEstimateRows(DatabaseExecutor db, String id) async {
+    await db.delete('line_items', where: 'estimate_id = ?', whereArgs: [id]);
+    await db.delete('material_estimates',
+        where: 'estimate_id = ?', whereArgs: [id]);
+    await db.rawDelete(
+      'DELETE FROM vertices WHERE zone_id IN '
+      '(SELECT id FROM zones WHERE estimate_id = ?)',
+      [id],
+    );
+    await db.delete('zones', where: 'estimate_id = ?', whereArgs: [id]);
+    await db.delete('estimates', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Best-effort deletion of a photo file: never throws.
+  Future<void> _deletePhotoFile(String? photoPath) async {
+    if (photoPath == null || photoPath.isEmpty) return;
+    try {
+      final file = File(photoPath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Ignored on purpose — the database rows are already gone.
+    }
+  }
+
   /// Deletes an estimate and every record that belongs to it, then removes
   /// the estimate's photo file if one is stored on disk.
   Future<void> deleteEstimate(String id) async {
@@ -205,30 +259,11 @@ class EstimateRepository {
     }
 
     await db.transaction((txn) async {
-      await txn.delete('line_items',
-          where: 'estimate_id = ?', whereArgs: [id]);
-      await txn.delete('material_estimates',
-          where: 'estimate_id = ?', whereArgs: [id]);
-      await txn.rawDelete(
-        'DELETE FROM vertices WHERE zone_id IN '
-        '(SELECT id FROM zones WHERE estimate_id = ?)',
-        [id],
-      );
-      await txn.delete('zones', where: 'estimate_id = ?', whereArgs: [id]);
-      await txn.delete('estimates', where: 'id = ?', whereArgs: [id]);
+      await _deleteEstimateRows(txn, id);
     });
 
     // Best-effort photo cleanup: never let a file error fail the delete.
-    if (photoPath != null && photoPath.isNotEmpty) {
-      try {
-        final file = File(photoPath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (_) {
-        // Ignored on purpose — the database rows are already gone.
-      }
-    }
+    await _deletePhotoFile(photoPath);
   }
 
   /// Upserts each pricing row (matched on the `service` primary key).

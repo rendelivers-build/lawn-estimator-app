@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 
 import 'package:lawn_estimator/core/units.dart';
@@ -108,6 +109,116 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
         .then((_) => _refresh());
   }
 
+  /// Long-press menu on an estimate card: edit it or delete it.
+  Future<void> _showEstimateActions(EstimateListItem item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit'),
+              subtitle: const Text('Change prices, quantities, or notes'),
+              onTap: () => Navigator.of(context).pop('edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title:
+                  const Text('Delete', style: TextStyle(color: Colors.red)),
+              subtitle: const Text('Removes the estimate for good'),
+              onTap: () => Navigator.of(context).pop('delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'edit') {
+      await _editEstimate(item.estimate.id);
+    } else {
+      await _deleteEstimate(item);
+    }
+  }
+
+  /// Loads a saved estimate back into the draft so it can be changed,
+  /// then opens the summary where quantities, prices, and notes are
+  /// editable. Saving replaces the original — no duplicate.
+  Future<void> _editEstimate(String id) async {
+    final full = await EstimateRepository().getEstimateFull(id);
+    if (!mounted) return;
+    if (full == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open that estimate.')),
+      );
+      return;
+    }
+    final estimate = full.estimate;
+    final zones = <List<LatLng>>[
+      for (final zone in full.zones)
+        [
+          for (final v in full.verticesByZone[zone.id] ?? const <Vertex>[])
+            LatLng(v.latitude, v.longitude),
+        ],
+    ];
+    final draft = EstimateDraft(
+      addressLabel: estimate.addressLabel,
+      placeId: estimate.placeId,
+      centerLat: estimate.centerLat,
+      centerLng: estimate.centerLng,
+      zones: zones.isEmpty ? const [[]] : zones,
+      photoPath: estimate.photoPath,
+      note: estimate.note,
+      internalNote: estimate.internalNote,
+      displayNote: estimate.displayNote,
+      confirmed:
+          estimate.confirmationStatus == ConfirmationStatus.confirmed,
+      materials: full.materials,
+      lineItems: full.lineItems,
+      resumeRoute: '/summary',
+      editingEstimateId: id,
+    );
+    ref.read(estimateDraftProvider.notifier).restore(draft);
+    // Persist so an interruption mid-edit still resumes as an edit of the
+    // same estimate rather than a brand-new one.
+    await saveDraft(draft);
+    if (!mounted) return;
+    Navigator.of(context).pushNamed('/summary').then((_) => _refresh());
+  }
+
+  /// Confirms, then deletes the estimate and everything saved with it.
+  Future<void> _deleteEstimate(EstimateListItem item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete estimate?'),
+        content: Text(
+          'Delete the estimate for ${item.estimate.addressLabel}? '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await EstimateRepository().deleteEstimate(item.estimate.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Estimate deleted.')),
+    );
+    _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,6 +268,7 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
               return _EstimateCard(
                 item: item,
                 onTap: () => _openEstimate(item.estimate.id),
+                onLongPress: () => _showEstimateActions(item),
               );
             },
           );
@@ -220,12 +332,17 @@ class _EmptyState extends StatelessWidget {
 }
 
 /// One saved estimate in the list: photo thumbnail, address/date/area,
-/// total price, and a chevron.
+/// total price, and a chevron. Tap opens it; long-press offers edit/delete.
 class _EstimateCard extends StatelessWidget {
   final EstimateListItem item;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _EstimateCard({required this.item, required this.onTap});
+  const _EstimateCard({
+    required this.item,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +378,7 @@ class _EstimateCard extends StatelessWidget {
           ],
         ),
         onTap: onTap,
+        onLongPress: onLongPress,
       ),
     );
   }

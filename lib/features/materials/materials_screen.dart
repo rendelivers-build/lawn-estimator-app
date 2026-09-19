@@ -303,11 +303,17 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
       final resolved = ref
           .read(pricingProvider.notifier)
           .resolve(cfg.serviceId, mode: ref.read(appSettingsProvider).mode);
-      // Expert materials markup rides on top of the resolved price, so a
-      // $26 bag with 20% markup bills at $31.20 on the estimate.
-      final marked = applyMarkup(
-        resolved.price,
-        ref.read(appSettingsProvider).materialsMarkup,
+      // Granular materials are priced per lb in settings but billed by the
+      // bag: scale the per-lb price by the bag weight so the line item is
+      // bags × $/bag (a $26 bag with 20% markup bills at $31.20).
+      // The expert materials markup rides on top of the resolved price.
+      final bagLb =
+          cfg.isSod ? 0.0 : _parse(_packageCtrls[cfg.serviceId]!, cfg.defaultPackage);
+      final unitPrice = materialUnitPrice(
+        resolvedPrice: resolved.price,
+        isGranular: !cfg.isSod,
+        bagLb: bagLb,
+        markupPercent: ref.read(appSettingsProvider).materialsMarkup,
       );
 
       materials.add(MaterialEstimate.create(
@@ -335,7 +341,7 @@ class _MaterialsScreenState extends ConsumerState<MaterialsScreen> {
         service: cfg.serviceId,
         quantity: quantity,
         unit: unitLabel,
-        unitPrice: _fmt(marked),
+        unitPrice: _fmt(unitPrice),
         rateSource: resolved.source,
       ));
     }

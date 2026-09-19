@@ -33,6 +33,24 @@ class ResolvedRate {
 double applyMarkup(double price, double markupPercent) =>
     price * (1 + markupPercent / 100);
 
+/// Billable unit price for a material line item.
+///
+/// Granular materials (seed, fertilizer, weed & feed) are priced per lb in
+/// settings, but the estimate bills whole bags: the resolved per-lb price
+/// is scaled by the bag weight ([bagLb]) into a per-bag unit price, so the
+/// line reads `bags × $/bag`. Sod is priced per unit/pallet already and
+/// passes through unchanged. The expert materials [markupPercent] is
+/// applied on top either way.
+double materialUnitPrice({
+  required double resolvedPrice,
+  required bool isGranular,
+  required double bagLb,
+  required double markupPercent,
+}) {
+  final perPurchaseUnit = isGranular ? resolvedPrice * bagLb : resolvedPrice;
+  return applyMarkup(perPurchaseUnit, markupPercent);
+}
+
 /// Holds the pricing settings map keyed by service id.
 class PricingNotifier extends StateNotifier<Map<String, PricingSettings>> {
   PricingNotifier() : super({});

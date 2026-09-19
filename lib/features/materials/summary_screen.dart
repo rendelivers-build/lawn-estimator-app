@@ -123,7 +123,10 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       notifier.setInternalNote(internalNote.isEmpty ? null : internalNote);
       notifier.setDisplayNote(displayNote.isEmpty ? null : displayNote);
 
-      await EstimateRepository().saveDraft(ref.read(estimateDraftProvider));
+      await EstimateRepository().saveDraft(
+        ref.read(estimateDraftProvider),
+        replaceId: current.editingEstimateId,
+      );
       // The estimate is saved: drop the auto-save so it doesn't prompt
       // a resume next launch.
       await clearDraft();
@@ -134,7 +137,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Estimate saved.')),
+        SnackBar(
+          content: Text(current.editingEstimateId != null
+              ? 'Estimate updated.'
+              : 'Estimate saved.'),
+        ),
       );
       Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     } catch (e) {
