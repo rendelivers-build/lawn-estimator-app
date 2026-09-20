@@ -17,8 +17,43 @@ import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/measure/draft_autosave.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
+import 'package:lawn_estimator/features/measure/measure_screen.dart';
 import 'package:lawn_estimator/features/settings/app_settings_provider.dart';
 import 'package:lawn_estimator/models/models.dart';
+
+/// Builds an editable [EstimateDraft] from a saved estimate.
+///
+/// Shared by the "Edit" flow (prices/quantities/notes) and the "Edit area"
+/// flow (re-draw the outline on the map): everything the user did is
+/// carried over — address, zones, photo, notes, materials, and line items
+/// (prices, quantities, labor) — and [id] is recorded as [EstimateDraft.editingEstimateId]
+/// so saving replaces the original estimate instead of duplicating it.
+EstimateDraft buildEditDraft(EstimateFull full, String id) {
+  final estimate = full.estimate;
+  final zones = <List<LatLng>>[
+    for (final zone in full.zones)
+      [
+        for (final v in full.verticesByZone[zone.id] ?? const <Vertex>[])
+          LatLng(v.latitude, v.longitude),
+      ],
+  ];
+  return EstimateDraft(
+    addressLabel: estimate.addressLabel,
+    placeId: estimate.placeId,
+    centerLat: estimate.centerLat,
+    centerLng: estimate.centerLng,
+    zones: zones.isEmpty ? const [[]] : zones,
+    photoPath: estimate.photoPath,
+    note: estimate.note,
+    internalNote: estimate.internalNote,
+    displayNote: estimate.displayNote,
+    confirmed: estimate.confirmationStatus == ConfirmationStatus.confirmed,
+    materials: full.materials,
+    lineItems: full.lineItems,
+    resumeRoute: '/summary',
+    editingEstimateId: id,
+  );
+}
 
 /// US-dollar currency formatter shared by the list cards.
 final _currency = NumberFormat.currency(symbol: r'$', decimalDigits: 2);
@@ -76,8 +111,9 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
           // interrupted; fall back to /measure for anything unexpected.
           const flowRoutes = {'/measure', '/confirm', '/materials', '/summary'};
           final route = saved.resumeRoute;
-          Navigator.of(context)
-              .pushNamed(flowRoutes.contains(route) ? route! : '/measure');
+          Navigator.of(
+            context,
+          ).pushNamed(flowRoutes.contains(route) ? route! : '/measure');
           return;
         }
         await clearDraft();
@@ -104,12 +140,13 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
   }
 
   void _openEstimate(String id) {
-    Navigator.of(context)
-        .pushNamed('/estimate', arguments: id)
-        .then((_) => _refresh());
+    Navigator.of(
+      context,
+    ).pushNamed('/estimate', arguments: id).then((_) => _refresh());
   }
 
-  /// Long-press menu on an estimate card: edit it or delete it.
+  /// Long-press menu on an estimate card: edit it, re-draw its lawn
+  /// outline, or delete it.
   Future<void> _showEstimateActions(EstimateListItem item) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -124,9 +161,14 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
               onTap: () => Navigator.of(context).pop('edit'),
             ),
             ListTile(
+              leading: const Icon(Icons.map_outlined),
+              title: const Text('Edit area'),
+              subtitle: const Text('Re-draw the lawn outline on the map'),
+              onTap: () => Navigator.of(context).pop('edit_area'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
-              title:
-                  const Text('Delete', style: TextStyle(color: Colors.red)),
+              title: const Text('Delete', style: TextStyle(color: Colors.red)),
               subtitle: const Text('Removes the estimate for good'),
               onTap: () => Navigator.of(context).pop('delete'),
             ),
@@ -137,54 +179,55 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
     if (!mounted || action == null) return;
     if (action == 'edit') {
       await _editEstimate(item.estimate.id);
+    } else if (action == 'edit_area') {
+      await _editArea(item.estimate.id);
     } else {
       await _deleteEstimate(item);
     }
+  }
+
+  /// Loads a saved estimate back into the draft (preserving everything —
+  /// address, zones, photo, notes, materials, line items) so it can be
+  /// changed. Returns false when the estimate could not be loaded.
+  Future<bool> _restoreDraftForEdit(String id) async {
+    final full = await EstimateRepository().getEstimateFull(id);
+    if (!mounted) return false;
+    if (full == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open that estimate.')),
+      );
+      return false;
+    }
+    final draft = buildEditDraft(full, id);
+    ref.read(estimateDraftProvider.notifier).restore(draft);
+    // Persist so an interruption mid-edit still resumes as an edit of the
+    // same estimate rather than a brand-new one.
+    await saveDraft(draft);
+    return true;
   }
 
   /// Loads a saved estimate back into the draft so it can be changed,
   /// then opens the summary where quantities, prices, and notes are
   /// editable. Saving replaces the original — no duplicate.
   Future<void> _editEstimate(String id) async {
-    final full = await EstimateRepository().getEstimateFull(id);
-    if (!mounted) return;
-    if (full == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open that estimate.')),
-      );
-      return;
-    }
-    final estimate = full.estimate;
-    final zones = <List<LatLng>>[
-      for (final zone in full.zones)
-        [
-          for (final v in full.verticesByZone[zone.id] ?? const <Vertex>[])
-            LatLng(v.latitude, v.longitude),
-        ],
-    ];
-    final draft = EstimateDraft(
-      addressLabel: estimate.addressLabel,
-      placeId: estimate.placeId,
-      centerLat: estimate.centerLat,
-      centerLng: estimate.centerLng,
-      zones: zones.isEmpty ? const [[]] : zones,
-      photoPath: estimate.photoPath,
-      note: estimate.note,
-      internalNote: estimate.internalNote,
-      displayNote: estimate.displayNote,
-      confirmed:
-          estimate.confirmationStatus == ConfirmationStatus.confirmed,
-      materials: full.materials,
-      lineItems: full.lineItems,
-      resumeRoute: '/summary',
-      editingEstimateId: id,
-    );
-    ref.read(estimateDraftProvider.notifier).restore(draft);
-    // Persist so an interruption mid-edit still resumes as an edit of the
-    // same estimate rather than a brand-new one.
-    await saveDraft(draft);
+    if (!await _restoreDraftForEdit(id)) return;
     if (!mounted) return;
     Navigator.of(context).pushNamed('/summary').then((_) => _refresh());
+  }
+
+  /// Loads a saved estimate back into the draft, then opens the map with
+  /// the saved outline loaded so the area can be re-drawn. Finishing with
+  /// "Use this area" lands on the summary; saving there replaces the
+  /// original estimate — no duplicate.
+  Future<void> _editArea(String id) async {
+    if (!await _restoreDraftForEdit(id)) return;
+    if (!mounted) return;
+    Navigator.of(context)
+        .pushNamed(
+          '/measure',
+          arguments: const EditAreaArgs(returnToSummary: true),
+        )
+        .then((_) => _refresh());
   }
 
   /// Confirms, then deletes the estimate and everything saved with it.
@@ -213,9 +256,9 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
     if (confirm != true || !mounted) return;
     await EstimateRepository().deleteEstimate(item.estimate.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Estimate deleted.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Estimate deleted.')));
     _refresh();
   }
 
@@ -240,42 +283,42 @@ class _EstimatesScreenState extends ConsumerState<EstimatesScreen> {
           FutureBuilder<List<EstimateListItem>>(
             future: _estimatesFuture,
             builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not load estimates. Try again.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not load estimates. Try again.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
 
-          final estimates = snapshot.data ?? const <EstimateListItem>[];
-          if (estimates.isEmpty) {
-            return _EmptyState(onNewEstimate: _startNewEstimate);
-          }
+              final estimates = snapshot.data ?? const <EstimateListItem>[];
+              if (estimates.isEmpty) {
+                return _EmptyState(onNewEstimate: _startNewEstimate);
+              }
 
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: estimates.length,
-            itemBuilder: (context, index) {
-              final item = estimates[index];
-              return _EstimateCard(
-                item: item,
-                onTap: () => _openEstimate(item.estimate.id),
-                onLongPress: () => _showEstimateActions(item),
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: estimates.length,
+                itemBuilder: (context, index) {
+                  final item = estimates[index];
+                  return _EstimateCard(
+                    item: item,
+                    onTap: () => _openEstimate(item.estimate.id),
+                    onLongPress: () => _showEstimateActions(item),
+                  );
+                },
               );
             },
-          );
-            },
           ),
-          ],
-        ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _startNewEstimate,
         icon: const Icon(Icons.add),
@@ -306,10 +349,7 @@ class _EmptyState extends StatelessWidget {
               color: theme.colorScheme.primary.withValues(alpha: 0.6),
             ),
             const SizedBox(height: 16),
-            Text(
-              'No estimates yet',
-              style: theme.textTheme.headlineSmall,
-            ),
+            Text('No estimates yet', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
               'Measure a lawn to create your first estimate.',
@@ -353,8 +393,7 @@ class _EstimateCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         leading: _Thumbnail(photoPath: estimate.photoPath),
         title: Text(
           estimate.addressLabel,
@@ -419,11 +458,7 @@ class _Thumbnail extends StatelessWidget {
   Widget _placeholderIcon(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.grass,
-        size: 32,
-        color: theme.colorScheme.primary,
-      ),
+      child: Icon(Icons.grass, size: 32, color: theme.colorScheme.primary),
     );
   }
 }
@@ -437,17 +472,11 @@ class _LawnBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(
-          child: CustomPaint(painter: _DottedLinesPainter()),
-        ),
+        Positioned.fill(child: CustomPaint(painter: _DottedLinesPainter())),
         Positioned(
           right: -40,
           bottom: -40,
-          child: Icon(
-            Icons.grass,
-            size: 220,
-            color: const Color(0x0D2E7D32),
-          ),
+          child: Icon(Icons.grass, size: 220, color: const Color(0x0D2E7D32)),
         ),
       ],
     );

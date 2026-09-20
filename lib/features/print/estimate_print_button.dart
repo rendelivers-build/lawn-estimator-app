@@ -24,10 +24,14 @@ class EstimatePrintButton extends StatelessWidget {
     );
   }
 
-  /// Builds the PDF behind a blocking progress dialog, then hands the bytes
-  /// to the OS share sheet. The dialog is always dismissed; failures surface
-  /// as a SnackBar.
-  Future<void> _shareEstimate(BuildContext context) async {
+  /// Shared PDF-share flow, also used by "Save and send" on the Estimate
+  /// Summary screen: builds the PDF behind a blocking progress dialog,
+  /// then hands the bytes to the OS share sheet. The dialog is always
+  /// dismissed; failures surface as a SnackBar.
+  static Future<void> shareEstimate(
+    BuildContext context,
+    EstimateFull estimate,
+  ) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -52,10 +56,7 @@ class EstimatePrintButton extends StatelessWidget {
       final bytes = await buildEstimatePdf(estimate, company: company);
       final rawId = estimate.estimate.id.toString();
       final shortId = rawId.length > 8 ? rawId.substring(0, 8) : rawId;
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'estimate-$shortId.pdf',
-      );
+      await Printing.sharePdf(bytes: bytes, filename: 'estimate-$shortId.pdf');
     } catch (_) {
       failed = true;
     } finally {
@@ -70,4 +71,7 @@ class EstimatePrintButton extends StatelessWidget {
       );
     }
   }
+
+  Future<void> _shareEstimate(BuildContext context) =>
+      shareEstimate(context, estimate);
 }

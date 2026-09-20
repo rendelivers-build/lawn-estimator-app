@@ -10,6 +10,8 @@ import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/data/estimate_repository.dart';
 import 'package:lawn_estimator/features/measure/draft_autosave.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
+import 'package:lawn_estimator/features/measure/measure_screen.dart';
+import 'package:lawn_estimator/features/print/estimate_print_button.dart';
 import 'package:lawn_estimator/models/models.dart';
 
 /// Shows the draft's line items with editable quantities and unit prices.
@@ -19,7 +21,10 @@ import 'package:lawn_estimator/models/models.dart';
 /// when the reference rate filled in. Extended amounts and the grand
 /// total recalculate live as values change.
 class SummaryScreen extends ConsumerStatefulWidget {
-  const SummaryScreen({super.key});
+  const SummaryScreen({super.key, this.repository});
+
+  /// Injected for tests; defaults to the real repository.
+  final EstimateRepository? repository;
 
   @override
   ConsumerState<SummaryScreen> createState() => _SummaryScreenState();
@@ -38,6 +43,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   /// must not trip the no-area guard below while we navigate home — that
   /// race popped the freshly pushed home route and left a black screen.
   bool _saved = false;
+
+  /// Repository seam: the real one in production, a fake in widget tests.
+  EstimateRepository get _repo => widget.repository ?? EstimateRepository();
 
   @override
   void initState() {
@@ -94,22 +102,26 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       // LineItem.create derives extendedAmount from quantity × unitPrice.
       // Repeated labor lines are intentional (multiple crews/phases), and
       // a $0 rate is valid for freebies, notations, or unset pricing.
-      _items.add(LineItem.create(
-        estimateId: '',
-        service: 'labor',
-        quantity: result.workers * result.hours,
-        unit: 'man-hr',
-        unitPrice: _trimNumber(result.rate),
-        rateSource: 'owner',
-        note: note,
-      ));
+      _items.add(
+        LineItem.create(
+          estimateId: '',
+          service: 'labor',
+          quantity: result.workers * result.hours,
+          unit: 'man-hr',
+          unitPrice: _trimNumber(result.rate),
+          rateSource: 'owner',
+          note: note,
+        ),
+      );
     });
   }
 
-  /// Saves the draft (with any edited items), resets the draft, and
-  /// returns to the home screen.
-  Future<void> _saveEstimate() async {
-    if (_saving) return;
+  /// Persists the draft (with any edited items and notes) and returns the
+  /// saved estimate's id, or null when saving failed. Shared by "Save
+  /// estimate" and "Save and send" so both save exactly the same way:
+  /// saving replaces the original estimate when this draft is an edit.
+  Future<String?> _persistDraft() async {
+    if (_saving) return null;
     setState(() => _saving = true);
     try {
       final notifier = ref.read(estimateDraftProvider.notifier);
@@ -123,7 +135,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       notifier.setInternalNote(internalNote.isEmpty ? null : internalNote);
       notifier.setDisplayNote(displayNote.isEmpty ? null : displayNote);
 
-      await EstimateRepository().saveDraft(
+      final id = await _repo.saveDraft(
         ref.read(estimateDraftProvider),
         replaceId: current.editingEstimateId,
       );
@@ -134,26 +146,64 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       // otherwise trip the no-area guard's post-frame pop after navigation.
       if (mounted) setState(() => _saved = true);
       notifier.reset();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(current.editingEstimateId != null
-              ? 'Estimate updated.'
-              : 'Estimate saved.'),
-        ),
-      );
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      return id;
     } catch (e) {
       debugPrint('Save estimate failed: $e');
-      if (!mounted) return;
+      if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Could not save the estimate. Try again.')),
+          content: Text('Could not save the estimate. Try again.'),
+        ),
       );
+      return null;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Saves the draft (with any edited items), resets the draft, and
+  /// returns to the home screen.
+  Future<void> _saveEstimate() async {
+    final wasEdit = ref.read(estimateDraftProvider).editingEstimateId != null;
+    final id = await _persistDraft();
+    if (id == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(wasEdit ? 'Estimate updated.' : 'Estimate saved.'),
+      ),
+    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  /// Saves exactly like "Save estimate", then immediately opens the PDF
+  /// share flow for the saved estimate.
+  Future<void> _saveAndSend() async {
+    final id = await _persistDraft();
+    if (id == null || !mounted) return;
+    final full = await _repo.getEstimateFull(id);
+    if (!mounted) return;
+    if (full == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Estimate saved, but it could not be loaded for sharing.',
+          ),
+        ),
+      );
+    } else {
+      await EstimatePrintButton.shareEstimate(context, full);
+      if (!mounted) return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  /// Opens the map with the current lawn outline loaded so the area can
+  /// be re-drawn. Popping back from the map returns to this same screen,
+  /// so any unsaved price/quantity tweaks above survive the round trip.
+  void _editArea() {
+    Navigator.of(
+      context,
+    ).pushNamed('/measure', arguments: const EditAreaArgs());
   }
 
   @override
@@ -183,22 +233,34 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (draft.addressLabel != null &&
-                      draft.addressLabel!.isNotEmpty) ...[
-                    Text(
-                      draft.addressLabel!,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+          GestureDetector(
+            key: const Key('address_card'),
+            onLongPress: _editArea,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (draft.addressLabel != null &&
+                        draft.addressLabel!.isNotEmpty) ...[
+                      Text(
+                        draft.addressLabel!,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text('Total area: ${formatFt2(draft.totalAreaFt2)}'),
                     const SizedBox(height: 4),
+                    Text(
+                      'Long-press to edit the outline',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ],
-                  Text('Total area: ${formatFt2(draft.totalAreaFt2)}'),
-                ],
+                ),
               ),
             ),
           ),
@@ -208,7 +270,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                    'No line items yet. Add materials, labor, or services.'),
+                  'No line items yet. Add materials, labor, or services.',
+                ),
               ),
             )
           else
@@ -232,10 +295,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Total',
-                      style: Theme.of(context).textTheme.titleLarge),
-                  Text('\$${_grandTotal.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text('Total', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    '\$${_grandTotal.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ],
               ),
             ),
@@ -247,8 +311,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Notes',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text('Notes', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _displayNoteCtrl,
@@ -278,9 +341,23 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: ElevatedButton(
-            onPressed: _saving ? null : _saveEstimate,
-            child: Text(_saving ? 'Saving…' : 'Save estimate'),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _saveEstimate,
+                  child: Text(_saving ? 'Saving…' : 'Save estimate'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _saving ? null : _saveAndSend,
+                  icon: const Icon(Icons.send),
+                  label: Text(_saving ? 'Saving…' : 'Save and send'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -312,9 +389,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
                             item.note!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(fontStyle: FontStyle.italic),
                           ),
                         ),
@@ -333,7 +408,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                     key: ValueKey('qty_$index'),
                     initialValue: _trimNumber(item.quantity),
                     keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
@@ -342,8 +418,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       final parsed = double.tryParse(value.trim());
                       if (parsed == null || parsed < 0) return;
                       setState(() {
-                        _items[index] =
-                            _copyItem(item, quantity: parsed);
+                        _items[index] = _copyItem(item, quantity: parsed);
                       });
                     },
                   ),
@@ -354,7 +429,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                     key: ValueKey('price_$index'),
                     initialValue: item.unitPrice,
                     keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Price (${item.unit})',
                       prefixText: '\$',
@@ -365,8 +441,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       final parsed = double.tryParse(trimmed);
                       if (parsed == null || parsed < 0) return;
                       setState(() {
-                        _items[index] =
-                            _copyItem(item, unitPrice: trimmed);
+                        _items[index] = _copyItem(item, unitPrice: trimmed);
                       });
                     },
                   ),
@@ -425,11 +500,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
       ),
     );
   }
@@ -508,8 +579,7 @@ class _LaborDialogState extends State<_LaborDialog> {
         children: [
           TextField(
             controller: _workers,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Workers',
               border: OutlineInputBorder(),
@@ -519,8 +589,7 @@ class _LaborDialogState extends State<_LaborDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _hours,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Hours',
               border: OutlineInputBorder(),
@@ -530,8 +599,7 @@ class _LaborDialogState extends State<_LaborDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _rate,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Rate (USD per man-hour, 0 allowed)',
               prefixText: '\$',
@@ -552,7 +620,7 @@ class _LaborDialogState extends State<_LaborDialog> {
           Text(
             _valid
                 ? '${_trim(_workersVal)} workers × ${_trim(_hoursVal)} hrs × '
-                    '\$${_trim(_rateVal!)}/hr = \$${_total.toStringAsFixed(2)}'
+                      '\$${_trim(_rateVal!)}/hr = \$${_total.toStringAsFixed(2)}'
                 : 'Enter workers, hours, and rate (0 allowed).',
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -565,12 +633,14 @@ class _LaborDialogState extends State<_LaborDialog> {
         ),
         FilledButton(
           onPressed: _valid
-              ? () => Navigator.of(context).pop(_LaborInput(
+              ? () => Navigator.of(context).pop(
+                  _LaborInput(
                     workers: _workersVal,
                     hours: _hoursVal,
                     rate: _rateVal!,
                     note: _note.text,
-                  ))
+                  ),
+                )
               : null,
           child: const Text('Add'),
         ),
@@ -578,4 +648,3 @@ class _LaborDialogState extends State<_LaborDialog> {
     );
   }
 }
-

@@ -12,6 +12,40 @@ import 'package:lawn_estimator/core/geometry.dart';
 import 'package:lawn_estimator/core/units.dart';
 import 'package:lawn_estimator/features/measure/draft_provider.dart';
 
+/// Arguments for opening the measure screen in "edit area" mode: the draft
+/// already holds the lawn outline, so "Use this area" returns to the
+/// summary flow instead of pushing the confirm screen.
+class EditAreaArgs {
+  const EditAreaArgs({this.returnToSummary = false});
+
+  /// When true, "Use this area" replaces this screen with /summary (used
+  /// when launched from the saved-estimates list). When false, it pops
+  /// back to the calling screen (used from the Estimate Summary screen,
+  /// so any unsaved price/quantity tweaks on that screen survive).
+  final bool returnToSummary;
+}
+
+/// Where "Use this area" on the measure screen should go.
+enum AreaEditExit {
+  /// Normal flow: continue to the confirm screen.
+  toConfirm,
+
+  /// Edit-area mode launched from the summary: pop back to it.
+  popToCaller,
+
+  /// Edit-area mode launched from the saved list: replace with /summary.
+  replaceWithSummary,
+}
+
+/// Resolves the "Use this area" destination from the route arguments.
+/// Pure function so the routing contract is unit-testable.
+AreaEditExit areaEditExit(EditAreaArgs? args) {
+  if (args == null) return AreaEditExit.toConfirm;
+  return args.returnToSummary
+      ? AreaEditExit.replaceWithSummary
+      : AreaEditExit.popToCaller;
+}
+
 /// Draw mode is always on (v1): every map tap drops a vertex on the active
 /// zone. Markers are draggable to fine-tune the outline.
 class MeasureScreen extends ConsumerStatefulWidget {
@@ -38,11 +72,26 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
   /// be grabbed cleanly (long-press a pin, then drag, to move it).
   bool _drawMode = true;
 
+  /// Set when this screen was opened in "edit area" mode (see [EditAreaArgs]).
+  EditAreaArgs? _editAreaArgs;
+  bool _argsRead = false;
+
   @override
   void initState() {
     super.initState();
     ref.read(estimateDraftProvider.notifier).setResumeRoute('/measure');
     _buildVertexIcon();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ModalRoute isn't available in initState; read the arguments once here.
+    if (!_argsRead) {
+      _argsRead = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is EditAreaArgs) _editAreaArgs = args;
+    }
   }
 
   Future<void> _buildVertexIcon() async {
@@ -67,12 +116,10 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
     );
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.toInt(), size.toInt());
-    final bytes =
-        await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     if (!mounted || bytes == null) return;
     setState(() {
-      _vertexIcon =
-          BitmapDescriptor.bytes(bytes.buffer.asUint8List());
+      _vertexIcon = BitmapDescriptor.bytes(bytes.buffer.asUint8List());
     });
   }
 
@@ -100,8 +147,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
 
   void _toggleMapType() {
     setState(() {
-      _mapType =
-          _mapType == MapType.satellite ? MapType.normal : MapType.satellite;
+      _mapType = _mapType == MapType.satellite
+          ? MapType.normal
+          : MapType.satellite;
     });
   }
 
@@ -114,9 +162,7 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
     final canContinue = draft.canContinue && !selfIntersects;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(draft.addressLabel ?? 'Measure lawn'),
-      ),
+      appBar: AppBar(title: Text(draft.addressLabel ?? 'Measure lawn')),
       body: Column(
         children: [
           Expanded(child: _buildMap(draft, notifier)),
@@ -187,7 +233,10 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
     };
   }
 
-  Set<Marker> _buildMarkers(EstimateDraft draft, EstimateDraftNotifier notifier) {
+  Set<Marker> _buildMarkers(
+    EstimateDraft draft,
+    EstimateDraftNotifier notifier,
+  ) {
     final markers = <Marker>{};
     for (var i = 0; i < draft.zones.length; i++) {
       final zone = draft.zones[i];
@@ -248,10 +297,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Tap the map to drop outline points (3 or more needed).',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.grey.shade700),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
               ),
             ),
         ],
@@ -272,8 +320,9 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
             label: Text('Zone ${i + 1} • ${formatFt2(draft.zoneAreaFt2(i))}'),
             selected: i == draft.activeZone,
             onSelected: (_) => notifier.setActiveZone(i),
-            onDeleted:
-                draft.zones.length > 1 ? () => notifier.removeZone(i) : null,
+            onDeleted: draft.zones.length > 1
+                ? () => notifier.removeZone(i)
+                : null,
           );
         },
       ),
@@ -302,15 +351,14 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
                 ),
               ],
               selected: {_drawMode},
-              onSelectionChanged: (s) =>
-                  setState(() => _drawMode = s.first),
+              onSelectionChanged: (s) => setState(() => _drawMode = s.first),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             _drawMode
                 ? 'Tap the map to drop outline points.'
-                : 'Long-press a pin, then drag to move it.',
+                : 'Hold pins to move them; drag to fine-tune the outline.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -340,14 +388,28 @@ class _MeasureScreenState extends ConsumerState<MeasureScreen> {
     );
   }
 
+  /// "Use this area": in the normal flow this pushes the confirm screen.
+  /// In edit-area mode it returns to the summary flow instead, so the
+  /// re-drawn outline lands back where the edit started with everything
+  /// else (prices, notes, photo, ...) untouched.
+  void _onContinue() {
+    switch (areaEditExit(_editAreaArgs)) {
+      case AreaEditExit.toConfirm:
+        Navigator.pushNamed(context, '/confirm');
+      case AreaEditExit.popToCaller:
+        Navigator.pop(context);
+      case AreaEditExit.replaceWithSummary:
+        Navigator.pushReplacementNamed(context, '/summary');
+    }
+  }
+
   Widget _buildContinueButton(bool enabled) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed:
-              enabled ? () => Navigator.pushNamed(context, '/confirm') : null,
+          onPressed: enabled ? _onContinue : null,
           child: const Text('Use this area'),
         ),
       ),
