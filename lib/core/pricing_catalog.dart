@@ -130,16 +130,21 @@ const List<PricingService> kPricingServices = [
 
 /// Starter prices used in Beginner mode when the owner hasn't set their own
 /// price and no area default exists. Keyed by service id; the value is in
-/// the service's purchase unit (per bag, per unit/pallet, per 1k ft²).
+/// the service's catalog unit: per lb for granular materials (seed,
+/// fertilizer, weed & feed — the estimate scales these by the bag weight
+/// into a per-bag line item), per unit/pallet for sod, per 1k ft² for
+/// services.
 ///
 /// Generic starting points only, NOT market quotes — the UI labels them
 /// as starter prices and the owner can override every one.
 const Map<String, double> kStarterPrices = {
   'sod': 150.0,
-  'seed_new': 42.0,
-  'seed_overseed': 42.0,
-  'fertilizer': 28.0,
-  'weed_feed': 32.0,
+  // Per-lb prices derived from typical per-bag retail: seed $42 / 25 lb bag,
+  // fertilizer $28 / 15 lb bag, weed & feed $32 / 15 lb bag.
+  'seed_new': 1.68,
+  'seed_overseed': 1.68,
+  'fertilizer': 1.87,
+  'weed_feed': 2.13,
   'mowing': 10.0,
   'aerate': 18.0,
   'dethatch': 22.0,

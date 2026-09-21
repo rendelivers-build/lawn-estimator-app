@@ -1,7 +1,7 @@
 name: lawn_estimator
 description: Field estimator for lawn care — measure lawn areas from satellite imagery and produce materials + pricing estimates.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+12
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
